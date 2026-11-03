@@ -24,7 +24,12 @@ declare global {
 
 type VideoCard = { id: string; title: string; subject: string; level: string; duration: string; color: string; image: string; videoUrl: string };
 type LandingStats = { activeStudents: number; practiceExams: number };
-const recommendedVideos: VideoCard[] = [];
+type StudentProgressSummary = {
+  overallAverage: number | null;
+  completedCount: number;
+  subjects: { subject: string; averagePercentage: number; examsCompleted: number }[];
+  recommendations: { subject: string; averagePercentage: number; message: string }[];
+};
 
 function isLandingStats(value: unknown): value is LandingStats {
   if (!value || typeof value !== "object") return false;
@@ -202,7 +207,7 @@ export default function Home() {
   const router = useRouter();
   const [authenticated, setAuthenticated] = useState(false);
   const [portal, setPortal] = useState<"student" | "admin">("student");
-  const [selectedVideo, setSelectedVideo] = useState<(typeof recommendedVideos)[number] | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<VideoCard | null>(null);
   const [publishedExam] = useState<PublishedExam | null>(null);
   const [contentVideos, setContentVideos] = useState<VideoCard[]>([]);
   const [contentBooks, setContentBooks] = useState<BookCard[]>([]);
@@ -239,6 +244,8 @@ export default function Home() {
   const [answerSheetFile, setAnswerSheetFile] = useState<File | null>(null);
   const [examResult, setExamResult] = useState<ExamResult | null>(null);
   const [progressRefreshKey, setProgressRefreshKey] = useState(0);
+  const [progressSummary, setProgressSummary] = useState<StudentProgressSummary | null>(null);
+  const [progressSummaryError, setProgressSummaryError] = useState("");
   const [examError, setExamError] = useState("");
   const submitExamRef = useRef<() => Promise<void>>(async () => undefined);
   const [educationLevel, setEducationLevel] = useState("");
@@ -264,6 +271,7 @@ export default function Home() {
   const academicProfileComplete = isAcademicProfileComplete(academicProfile);
   const quizExams = exams.filter((exam) => exam.isQuiz);
   const scheduledExams = exams.filter((exam) => !exam.isQuiz);
+  const leadingRecommendation = progressSummary?.recommendations[0] ?? null;
   const learningCategories: LearningShowcaseCard[] = [
     { title: "Exams", description: "Prepare for your next assessment with practice papers.", summary: `${scheduledExams.length + writtenPapers.length} available`, image: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=800&h=500&fit=crop", icon: "▣", destination: "Examinations", actionLabel: "Explore exams" },
     { title: "Quiz", description: "Check your understanding with quick quizzes.", summary: `${quizExams.length} available`, image: "https://images.unsplash.com/photo-1606326608606-aa0b62935f2b?w=800&h=500&fit=crop", icon: "✓", destination: "Examinations", actionLabel: "Explore quizzes" },
@@ -344,6 +352,8 @@ export default function Home() {
     await fetch("/api/auth", { method: "DELETE" });
     setAuthenticated(false);
     setUserRole(null);
+    setProgressSummary(null);
+    setProgressSummaryError("");
     setAuthError("");
     setAuthMessage("");
   };
@@ -369,6 +379,8 @@ export default function Home() {
         const response = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "signup", email, password, fullName, mobileNumber, educationLevel, grade: Number(studentGrade), stream, subjects }) });
         const payload = (await response.json()) as { error?: string; user?: AuthResponseUser };
         if (!response.ok || !payload.user) throw new Error(payload.error ?? "Unable to create the account.");
+        setProgressSummary(null);
+        setProgressSummaryError("");
         setAuthenticated(true);
         setUserRole("student");
         updateProfileFromUser(payload.user);
@@ -381,6 +393,8 @@ export default function Home() {
       if (!response.ok || !payload.user) throw new Error(payload.error ?? "Authentication failed.");
       const sessionRole = payload.user.role === "admin" ? "admin" : "student";
       updateProfileFromUser(payload.user);
+      setProgressSummary(null);
+      setProgressSummaryError("");
       setAuthenticated(true);
       setUserRole(sessionRole);
       setAuthMessage("Signed in successfully.");
@@ -403,6 +417,8 @@ export default function Home() {
       if (!response.ok || !payload.user) throw new Error(payload.error ?? "Google sign-in failed.");
       const sessionRole = payload.user.role === "admin" ? "admin" : "student";
       updateProfileFromUser(payload.user);
+      setProgressSummary(null);
+      setProgressSummaryError("");
       setAuthenticated(true);
       setUserRole(sessionRole);
       setAuthMessage("Signed in successfully with Google.");
@@ -490,6 +506,27 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!authenticated || userRole !== "student") return;
+
+    let current = true;
+    fetch("/api/student/progress", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json() as StudentProgressSummary & { error?: string };
+        if (!response.ok) throw new Error(payload.error ?? "Your progress summary could not be loaded.");
+        if (current) {
+          setProgressSummary(payload);
+          setProgressSummaryError("");
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Student progress summary could not be loaded:", error);
+        if (current) setProgressSummaryError("Your progress summary could not be loaded. Please open Progress to try again.");
+      });
+
+    return () => { current = false; };
+  }, [authenticated, userRole, progressRefreshKey]);
+
+  useEffect(() => {
     fetch("/api/content").then((response) => {
       if (!response.ok) throw new Error("Published content could not be loaded.");
       return response.json();
@@ -561,18 +598,6 @@ export default function Home() {
     };
     document.addEventListener("click", handleProfileTrigger);
     return () => document.removeEventListener("click", handleProfileTrigger);
-  }, []);
-
-  useEffect(() => {
-    const handleVideoTrigger = (event: MouseEvent) => {
-      const card = (event.target as HTMLElement).closest(".video-card");
-      if (!card) return;
-      const title = card.querySelector("h3")?.textContent;
-      const video = recommendedVideos.find((item) => item.title === title);
-      if (video) setSelectedVideo(video);
-    };
-    document.addEventListener("click", handleVideoTrigger);
-    return () => document.removeEventListener("click", handleVideoTrigger);
   }, []);
 
   useEffect(() => {
@@ -1121,7 +1146,7 @@ if (!authenticated) {
         <div className="page-content">
           {userRole === "student" && !academicProfileComplete && <p className="admin-upload-error" role="alert">Your academic profile is missing a valid grade or A/L stream. Ask an administrator to update it before exams and question papers can be displayed.</p>}
           {activeNav === "Overview" && <>
-          <section className="welcome-row"><div><p className="eyebrow">THURSDAY, 10 SEPTEMBER 2026</p><h1>Good morning, {profile.fullName} <span>✦</span></h1><p className="subtitle">A little progress every day adds up to big results.</p></div><button className="outline-button" onClick={() => setProfileOpen(true)}>View profile <span>↗</span></button></section>
+          <section className="welcome-row"><div><p className="eyebrow">{new Intl.DateTimeFormat("en-LK", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date()).toLocaleUpperCase()}</p><h1>Good morning, {profile.fullName} <span>✦</span></h1><p className="subtitle">A little progress every day adds up to big results.</p></div><button className="outline-button" onClick={() => setProfileOpen(true)}>View profile <span>↗</span></button></section>
 
           <section className="section-heading"><div><p className="eyebrow">CURATED FOR YOUR PROFILE</p><h2>Keep learning</h2></div><button className="text-button" onClick={() => setActiveNav("My learning")}>See all recommendations <span>→</span></button></section>
           <section className="learning-showcase" aria-label="Learning recommendations">
@@ -1147,16 +1172,53 @@ if (!authenticated) {
           <section className="learning-tracker" aria-labelledby="learning-tracker-title">
             <div className="section-heading"><div><p className="eyebrow">YOUR LEARNING JOURNEY</p><h2 id="learning-tracker-title">Progress at a glance</h2></div></div>
             <section className="stats-grid" aria-label="Learning progress">
-              <div className="stat-card accent"><div className="stat-label">LEARNING STREAK <span>↗</span></div><div className="stat-value">12 <small>days</small></div><div className="stat-foot"><span className="sparkline">╱╲╱╲╱╱╲</span> +3 from last week</div></div>
-              <div className="stat-card"><div className="stat-label">AVG. PERFORMANCE <span>↗</span></div><div className="stat-value">78<small>%</small></div><div className="stat-foot"><span className="up">↑ 6.4%</span> from last month</div></div>
-              <div className="stat-card"><div className="stat-label">HOURS LEARNED <span>↗</span></div><div className="stat-value">24<small>h</small> <em>18m</em></div><div className="stat-foot">Goal: 30h this month</div></div>
+              <div className="stat-card accent"><div className="stat-label">EXAMS COMPLETED</div><div className="stat-value">{progressSummary?.completedCount ?? "—"}</div><div className="stat-foot">Submitted and marked exams</div></div>
+              <div className="stat-card"><div className="stat-label">AVERAGE EXAM SCORE</div><div className="stat-value">{progressSummary?.overallAverage ?? "--"}{progressSummary?.overallAverage !== null && progressSummary?.overallAverage !== undefined && <small>%</small>}</div><div className="stat-foot">{!progressSummary ? "Loading your progress..." : progressSummary.overallAverage === null ? "Complete a marked exam to see your average" : "Across your completed exams"}</div></div>
+              <div className="stat-card"><div className="stat-label">SUBJECTS TO PRACTISE</div><div className="stat-value">{progressSummary?.recommendations.length ?? "—"}</div><div className="stat-foot">Based on your marked exam scores</div></div>
             </section>
+            {progressSummaryError && <p role="alert" className="admin-upload-error">{progressSummaryError}</p>}
           </section>
 
-          <div className="lower-grid"><section><div className="section-heading compact"><div><p className="eyebrow">STAY ON TRACK</p><h2>Upcoming examinations</h2></div><button className="text-button" onClick={() => setCalendarOpen(true)}>View calendar <span>→</span></button></div><div className="exam-list">{exams.map((exam) => <article className={`exam-row ${exam.tone}`} key={exam.id}><div className="date-block"><strong>{exam.date.split(" ")[0]}</strong><span>{exam.date.split(" ")[1]}</span></div><div className="exam-info"><span className="subject-tag">{exam.subject}</span><h3>{exam.title}</h3><p>{exam.time} <span>·</span> {exam.duration}</p></div><button className="arrow-button" onClick={() => openExam(exam)} aria-label={`Open ${exam.title}`}>↗</button></article>)}{writtenPapers.map((paper) => <article className="exam-row mint" key={`paper-${paper.id}`}><div className="date-block"><strong>PDF</strong><span>PAPER</span></div><div className="exam-info"><span className="subject-tag">{paper.subject} · Written paper</span><h3>{paper.title}</h3><p>{paper.durationMins} min <span>·</span> Essay / structured practice</p></div><button className="arrow-button" onClick={() => setActiveNav("Examinations")} aria-label={`Open ${paper.title} written paper`}>↗</button></article>)}{exams.length === 0 && writtenPapers.length === 0 && <p className="admin-empty">No upcoming exams or written papers have been published yet.</p>}</div></section><section className="progress-panel"><div className="section-heading compact"><div><p className="eyebrow">YOUR PROGRESS</p><h2>Subject strengths</h2></div><button className="more-button">•••</button></div><div className="progress-bars"><div className="progress-item"><div><span>Biology</span><strong>84%</strong></div><div className="bar"><i style={{ width: "84%", background: "#2a8c73" }} /></div></div><div className="progress-item"><div><span>Chemistry</span><strong>76%</strong></div><div className="bar"><i style={{ width: "76%", background: "#dfa53e" }} /></div></div><div className="progress-item"><div><span>Physics</span><strong>68%</strong></div><div className="bar"><i style={{ width: "68%", background: "#9b6eaa" }} /></div></div></div><div className="insight"><span>✦</span><p><strong>AI insight</strong><br />You&apos;re close to mastering Physics. Focus on <u>vectors</u> next.</p></div></section></div>
+          <div className="lower-grid">
+            <section>
+              <div className="section-heading compact">
+                <div><p className="eyebrow">STAY ON TRACK</p><h2>Upcoming examinations</h2></div>
+                <button className="text-button" onClick={() => setCalendarOpen(true)}>View calendar <span>→</span></button>
+              </div>
+              <div className="exam-list">
+                {exams.map((exam) => <article className={`exam-row ${exam.tone}`} key={exam.id}><div className="date-block"><strong>{exam.date.split(" ")[0]}</strong><span>{exam.date.split(" ")[1]}</span></div><div className="exam-info"><span className="subject-tag">{exam.subject}</span><h3>{exam.title}</h3><p>{exam.time} <span>·</span> {exam.duration}</p></div><button className="arrow-button" onClick={() => openExam(exam)} aria-label={`Open ${exam.title}`}>↗</button></article>)}
+                {writtenPapers.map((paper) => <article className="exam-row mint" key={`paper-${paper.id}`}><div className="date-block"><strong>PDF</strong><span>PAPER</span></div><div className="exam-info"><span className="subject-tag">{paper.subject} · Written paper</span><h3>{paper.title}</h3><p>{paper.durationMins} min <span>·</span> Essay / structured practice</p></div><button className="arrow-button" onClick={() => setActiveNav("Examinations")} aria-label={`Open ${paper.title} written paper`}>↗</button></article>)}
+                {exams.length === 0 && writtenPapers.length === 0 && <p className="admin-empty">No upcoming exams or written papers have been published yet.</p>}
+              </div>
+            </section>
+            <section className="progress-panel">
+              <div className="section-heading compact">
+                <div><p className="eyebrow">YOUR PROGRESS</p><h2>Subject strengths</h2></div>
+              </div>
+              <div className="progress-bars">
+                {progressSummary?.subjects.map((subject, index) => <div className="progress-item" key={subject.subject}>
+                  <div><span>{subject.subject}</span><strong>{subject.averagePercentage}%</strong></div>
+                  <div className="bar"><i style={{ width: `${subject.averagePercentage}%`, background: ["#2a8c73", "#dfa53e", "#9b6eaa"][index % 3] }} /></div>
+                </div>)}
+                {progressSummary && progressSummary.subjects.length === 0 && <p className="admin-empty">Complete a marked exam to see your subject scores.</p>}
+                {!progressSummary && !progressSummaryError && <p className="admin-empty">Loading your progress...</p>}
+              </div>
+              <div className="insight"><span>✦</span><p><strong>{leadingRecommendation ? "Practice focus" : "Personalised insight"}</strong><br />{leadingRecommendation?.message ?? (progressSummary ? "Complete a marked exam to see personal practice recommendations." : progressSummaryError || "Loading your personal progress.")}</p></div>
+            </section>
+          </div>
           </>}
 
-          {activeNav === "My learning" && <section className="nav-page"><div className="section-heading"><div><p className="eyebrow">YOUR PERSONALISED LIBRARY</p><h1>My learning</h1><p className="subtitle">Pick up where you left off and keep your momentum going.</p></div></div><div className="learning-summary"><div><span className="eyebrow">CURRENT FOCUS</span><h2>Physics · Vectors</h2><p>68% complete · 3 lessons remaining</p></div><button className="primary-button">Continue learning <span>→</span></button></div><div className="video-grid">{contentVideos.map((video) => <article className="video-card" key={video.id}><div className="video-art" style={{ backgroundImage: `url(${video.image})`, backgroundColor: video.color }}><span className="video-duration">{video.duration}</span><button className="play-button" aria-label={`Play ${video.title}`}>▶</button></div><div className="video-copy"><div className="video-meta"><span>{video.subject}</span><span>{video.level}</span></div><h3>{video.title}</h3><button className="watch-button">Start watching <span>↗</span></button></div></article>)}</div></section>}
+          {activeNav === "My learning" && <section className="nav-page">
+            <div className="section-heading"><div><p className="eyebrow">YOUR PERSONALISED LIBRARY</p><h1>My learning</h1><p className="subtitle">Browse video lessons published for your academic profile.</p></div></div>
+            <div className="learning-summary">
+              <div><span className="eyebrow">AVAILABLE LESSONS</span><h2>{contentVideos.length ? `${contentVideos.length} published lessons` : "No published lessons yet"}</h2><p>{contentVideos.length ? "Choose a lesson below to start learning." : "New lessons will appear here when they are published for your profile."}</p></div>
+              <button className="primary-button" disabled={!contentVideos.length} onClick={() => contentVideos[0] && setSelectedVideo(contentVideos[0])}>{contentVideos.length ? "Start first lesson" : "No lessons available"} <span>→</span></button>
+            </div>
+            <div className="video-grid">
+              {contentVideos.map((video) => <article className="video-card" key={video.id}><div className="video-art" style={{ backgroundImage: `url(${video.image})`, backgroundColor: video.color }}><span className="video-duration">{video.duration}</span><button className="play-button" aria-label={`Play ${video.title}`} onClick={() => setSelectedVideo(video)}>▶</button></div><div className="video-copy"><div className="video-meta"><span>{video.subject}</span><span>{video.level}</span></div><h3>{video.title}</h3><button className="watch-button" onClick={() => setSelectedVideo(video)}>Start watching <span>↗</span></button></div></article>)}
+              {!contentVideos.length && <p className="admin-empty">No video lessons are available for your academic profile yet.</p>}
+            </div>
+          </section>}
 
           {activeNav === "Examinations" && <section className="nav-page">
             {contentError && <p role="alert" className="admin-upload-error">{contentError}</p>}
@@ -1184,9 +1246,9 @@ if (!authenticated) {
           {activeNav === "Examinations" && <section className="nav-page written-paper-student-list"><div className="section-heading"><div><p className="eyebrow">ESSAY AND STRUCTURED PRACTICE</p><h2>Question papers</h2><p className="subtitle">Start the exam to begin its timer, then upload your scanned answer paper before time runs out.</p></div></div>{writtenPapers.length === 0 ? <p className="admin-empty">No essay or structured question papers have been published yet.</p> : <div className="written-paper-student-grid">{writtenPapers.map((paper) => <article className="written-paper-student-card" key={paper.id}><div className="written-paper-card-top"><div><span className="subject-tag">{paper.subject} &middot; {paper.educationLevel === "GRADE" ? `Grade${paper.grade ? ` ${paper.grade}` : ""}` : paper.educationLevel === "A_LEVEL" ? "A Level" : "O Level"}{paper.stream ? ` &middot; ${paper.stream}` : ""}</span><h3>{paper.title}</h3><p>{paper.fileName}{paper.fileName.toLowerCase().endsWith(".docx") ? " · Download to open this Word document." : ""}</p></div><a className="primary-button" href={`/api/written-papers/${paper.id}/download`}>Download question paper</a></div>{paper.answerSchemePublished && <p><a className="secondary-button" href={`/api/written-papers/${paper.id}/answer-scheme`}>Download answer scheme</a></p>}{paper.fileName.toLowerCase().endsWith(".pdf") && <iframe className="written-paper-preview" src={`/api/written-papers/${paper.id}/download?inline=1`} title={`${paper.title} question paper`} />}<WrittenPaperAttempt paper={paper} /></article>)}</div>}</section>}
           {activeNav === "Progress" && <StudentProgress refreshKey={progressRefreshKey} />}
 
-          {activeNav === "Book shop" && <section className="nav-page shop-page"><div className="section-heading"><div><p className="eyebrow">STUDY MATERIALS FOR YOUR JOURNEY</p><h1>Book shop</h1><p className="subtitle">Get trusted revision guides and practice papers delivered to you.</p></div><button className="basket-button" onClick={() => setBasket([])} aria-label="Clear basket">Basket <span>{basket.length}</span></button></div><div className="book-grid">{contentBooks.map((book) => { const inBasket = basket.includes(book.title); return <article className={`book-card ${book.color}`} key={book.id}><div className="book-cover" style={book.imageUrl ? { backgroundImage: `url(${book.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}><span>{book.level}</span><strong>{book.subject}</strong><i>E-mind<br />Study Series</i></div><div className="book-copy"><div className="book-meta"><span>{book.subject}</span><span>{book.level}</span></div><h2>{book.title}</h2><p>by {book.author}</p><div className="book-purchase"><strong>{book.price}</strong><button className={inBasket ? "added-button" : "primary-button"} onClick={() => setBasket((current) => inBasket ? current.filter((title) => title !== book.title) : [...current, book.title])}>{inBasket ? "Added ✓" : "Add to basket"}</button></div></div></article>; })}</div>{basket.length > 0 && <div className="basket-bar"><div><strong>{basket.length} {basket.length === 1 ? "book" : "books"} in your basket</strong><span>Ready for checkout</span></div><button className="primary-button" onClick={() => { setBasket([]); window.alert("Your order has been placed successfully."); }}>Checkout <span>→</span></button></div>}</section>}
+          {activeNav === "Book shop" && <section className="nav-page shop-page"><div className="section-heading"><div><p className="eyebrow">STUDY MATERIALS FOR YOUR JOURNEY</p><h1>Book shop</h1><p className="subtitle">Get trusted revision guides and practice papers delivered to you.</p></div><button className="basket-button" onClick={() => setBasket([])} aria-label="Clear basket">Basket <span>{basket.length}</span></button></div><div className="book-grid">{contentBooks.map((book) => { const inBasket = basket.includes(book.title); return <article className={`book-card ${book.color}`} key={book.id}><div className="book-cover" style={book.imageUrl ? { backgroundImage: `url(${book.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}><span>{book.level}</span><strong>{book.subject}</strong><i>E-mind<br />Study Series</i></div><div className="book-copy"><div className="book-meta"><span>{book.subject}</span><span>{book.level}</span></div><h2>{book.title}</h2><p>by {book.author}</p><div className="book-purchase"><strong>{book.price}</strong><button className={inBasket ? "added-button" : "primary-button"} onClick={() => setBasket((current) => inBasket ? current.filter((title) => title !== book.title) : [...current, book.title])}>{inBasket ? "Added ✓" : "Add to basket"}</button></div></div></article>; })}</div>{basket.length > 0 && <div className="basket-bar"><div><strong>{basket.length} {basket.length === 1 ? "book" : "books"} in your basket</strong><span>Online checkout is not available yet. No order has been placed.</span></div><button className="primary-button" disabled>Checkout unavailable</button></div>}</section>}
 
-          {activeNav === "Settings" && <section className="nav-page settings-page"><div className="section-heading"><div><p className="eyebrow">PERSONALISE YOUR SPACE</p><h1>Settings</h1><p className="subtitle">Manage your learning preferences and account experience.</p></div></div><div className="settings-grid"><section className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">ACCOUNT</p><h2>Profile details</h2></div><span className="settings-avatar">NS</span></div><label>Full name<input defaultValue="Nethmi Silva" /></label><label>Email address<input defaultValue="nethmi.silva@example.com" type="email" /></label><div className="profile-two-col"><label>District<select defaultValue="Colombo"><option>Colombo</option><option>Kandy</option><option>Galle</option><option>Jaffna</option></select></label><label>Language<select value={language} onChange={(event) => { setLanguage(event.target.value); setSettingsSaved(false); }}><option>English</option><option>සිංහල</option><option>தமிழ்</option></select></label></div></section><section className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">PREFERENCES</p><h2>Learning experience</h2></div></div><label className="setting-toggle"><span><strong>Study reminders</strong><small>Receive notifications about upcoming exams and goals.</small></span><input type="checkbox" checked={notificationsEnabled} onChange={(event) => { setNotificationsEnabled(event.target.checked); setSettingsSaved(false); }} /></label><label className="setting-toggle"><span><strong>Compact layout</strong><small>Fit more learning information on your dashboard.</small></span><input type="checkbox" checked={compactLayout} onChange={(event) => { setCompactLayout(event.target.checked); setSettingsSaved(false); }} /></label><div className="settings-actions"><span>{settingsSaved ? "Settings saved" : "Changes are saved for this session"}</span><button className="primary-button" onClick={() => setSettingsSaved(true)}>Save settings <span>✓</span></button></div></section></div></section>}
+          {activeNav === "Settings" && <section className="nav-page settings-page"><div className="section-heading"><div><p className="eyebrow">PERSONALISE YOUR SPACE</p><h1>Settings</h1><p className="subtitle">Manage your learning preferences and account experience.</p></div></div><div className="settings-grid"><section className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">ACCOUNT</p><h2>Profile details</h2></div><span className="settings-avatar">{getInitials(profile.fullName)}</span></div><label>Full name<input value={profile.fullName} readOnly /></label><label>Email address<input value={profile.email} readOnly type="email" /></label><div className="profile-two-col"><label>Education level<input value={profile.educationLevel} readOnly /></label><label>Grade<input value={profile.grade ? `Grade ${profile.grade}` : "Not provided"} readOnly /></label><label>Language<select value={language} onChange={(event) => { setLanguage(event.target.value); setSettingsSaved(false); }}><option>English</option><option>සිංහල</option><option>தமிழ்</option></select></label></div><label>Stream<input value={profile.stream} readOnly /></label><label>Subjects<input value={profile.subjects.length ? profile.subjects.join(", ") : "Not provided"} readOnly /></label></section><section className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">PREFERENCES</p><h2>Learning experience</h2></div></div><label className="setting-toggle"><span><strong>Study reminders</strong><small>Receive notifications about upcoming exams and goals.</small></span><input type="checkbox" checked={notificationsEnabled} onChange={(event) => { setNotificationsEnabled(event.target.checked); setSettingsSaved(false); }} /></label><label className="setting-toggle"><span><strong>Compact layout</strong><small>Fit more learning information on your dashboard.</small></span><input type="checkbox" checked={compactLayout} onChange={(event) => { setCompactLayout(event.target.checked); setSettingsSaved(false); }} /></label><div className="settings-actions"><span>{settingsSaved ? "Settings saved" : "Changes are saved for this session"}</span><button className="primary-button" onClick={() => setSettingsSaved(true)}>Save settings <span>✓</span></button></div></section></div></section>}
         </div>
       </section>
 
