@@ -62,6 +62,15 @@ function itemTitle(item: Item, resource: Resource) {
   return `${String(item.title)} · ${String(item.subject ?? "")}`;
 }
 
+function studentGroupLabel(item: Item) {
+  const grade = Number(item.grade);
+  const level = academicLevel(typeof item.educationLevel === "string" ? item.educationLevel : null);
+  const gradeLabel = Number.isInteger(grade) ? `Grade ${grade}` : "Grade not set";
+  if (level === "O_LEVEL") return `O/L · ${gradeLabel}`;
+  if (level === "A_LEVEL") return `A/L · ${gradeLabel}${typeof item.stream === "string" && item.stream.trim() ? ` · ${item.stream.trim()}` : ""}`;
+  return gradeLabel;
+}
+
 export default function AdminDashboard({ onSignOut, adminName }: { onSignOut: () => void; adminName: string }) {
   const [active, setActive] = useState<Resource>("exams");
   const [examTab, setExamTab] = useState<ExamTab>("mcq");
@@ -228,13 +237,72 @@ export default function AdminDashboard({ onSignOut, adminName }: { onSignOut: ()
     }
   }
 
+  function renderRecord(item: Item) {
+    const attempts = Array.isArray(item.attempts) ? item.attempts as Array<{ id: string; status: string; startedAt: string; submittedAt: string | null; answerFileName: string | null; user: { fullName: string; email: string; mobileNumber: string | null }; result: { obtainedMarks: number; totalMarks: number | null; percentage: number; passed: boolean } | null }> : [];
+    return <div key={item.id}>
+      <article className="admin-record">
+        <div>
+          <strong>{itemTitle(item, active)}</strong>
+          <small>{active === "exams" ? `${examState(item)} · ${new Date(String(item.startsAt)).toLocaleString()} – ${new Date(String(item.endsAt)).toLocaleString()} · ${attempts.length} student${attempts.length === 1 ? "" : "s"} started` : item.published ? "Published" : "Draft"}</small>
+        </div>
+        <div className="admin-record-actions">
+          {active === "exams" && <button onClick={() => setViewingResults(viewingResults === item.id ? null : item.id)}>{viewingResults === item.id ? "Hide students" : "View students & marks"}</button>}
+          <button onClick={() => openEdit(item)}>Edit</button>
+          <button className="danger-button" onClick={() => void remove(item)}>Delete</button>
+        </div>
+      </article>
+      {active === "exams" && viewingResults === item.id && <div className="admin-results">
+        <div className="admin-results-summary">
+          <strong>{attempts.length} student{attempts.length === 1 ? "" : "s"} participated</strong>
+          <span>{attempts.filter((attempt) => attempt.result).length} submitted · {attempts.filter((attempt) => attempt.status === "IN_PROGRESS").length} in progress</span>
+        </div>
+        {attempts.length === 0 ? <p className="admin-empty">No students have started this exam.</p> : <div className="admin-results-table-wrap">
+          <table className="admin-results-table">
+            <thead><tr><th>Student</th><th>Email</th><th>Mobile</th><th>Status</th><th>Started</th><th>Submitted</th><th>Answer sheet</th><th>Marks</th><th>Score</th><th>Admin action</th></tr></thead>
+            <tbody>{attempts.map((attempt) => <tr key={attempt.id}>
+              <td>{attempt.user.fullName}</td>
+              <td>{attempt.user.email}</td>
+              <td>{attempt.user.mobileNumber || "Not provided"}</td>
+              <td>{attempt.result ? attempt.result.passed ? "Passed" : "Submitted" : attempt.status === "IN_PROGRESS" ? "In progress" : "Expired"}</td>
+              <td>{new Date(attempt.startedAt).toLocaleString()}</td>
+              <td>{attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : "—"}</td>
+              <td>{attempt.answerFileName ? <a href={`/api/admin/exams/${item.id}/attempts/${attempt.id}/answer-sheet`}>Download {attempt.answerFileName}</a> : "—"}</td>
+              <td>{attempt.result ? `${attempt.result.obtainedMarks} / ${attempt.result.totalMarks ?? String(item.totalMarks)}` : "Pending"}</td>
+              <td>{attempt.result ? `${attempt.result.percentage.toFixed(1)}%` : "—"}</td>
+              <td><button type="button" className="danger-button" onClick={() => void removeAttempt(item, attempt)}>Remove attempt</button></td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
+      </div>}
+    </div>;
+  }
+
   return <main className="admin-shell">
     <aside className="admin-sidebar"><div className="brand"><span className="brand-mark">e</span><span>E-mind</span></div><div className="admin-label">ADMIN CONSOLE</div><nav className="admin-nav" aria-label="Admin navigation">{(Object.keys(labels) as Resource[]).map((resource) => <button key={resource} className={active === resource ? "active" : ""} onClick={() => { setActive(resource); setEditing(null); setForm({}); }}>{labels[resource]}</button>)}</nav><button className="admin-signout" onClick={onSignOut}>Sign out <span>↗</span></button></aside>
     <section className="admin-content"><header className="admin-topbar"><div><span className="eyebrow">E-mind SRI LANKA</span><h1>Content administration</h1></div><div className="admin-identity"><span className="admin-avatar">{adminName.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("")}</span><div><strong>{adminName}</strong><small>Administrator</small></div></div></header>
       <div className="admin-page-content">{active === "exams" && <nav className="admin-subtabs" aria-label="Exam management sections"><button type="button" className={examTab === "mcq" ? "active" : ""} onClick={() => setExamTab("mcq")}>MCQ exams</button><button type="button" className={examTab === "written" ? "active" : ""} onClick={() => setExamTab("written")}>Essay & structured papers</button><button type="button" className={examTab === "quiz" ? "active" : ""} onClick={() => setExamTab("quiz")}>Quiz exams</button></nav>}{active === "exams" && examTab === "written" && <WrittenPaperManager />}{active === "exams" && examTab === "quiz" && <QuizExamManager />}<div hidden={active === "exams" && examTab === "written"}><div className="admin-page-heading"><div><p className="eyebrow">CONTENT MANAGEMENT</p><h2>Manage {labels[active].toLowerCase()}</h2><p>{active === "exams" ? "Manage exam schedules, monitor participation, and review each student’s marks." : "Add, edit, publish, and delete content."}</p></div><button className="primary-button" onClick={openCreate}>+ Add {labels[active].slice(0, -1)}</button></div>
         {status && <p className="admin-upload-status">{status}</p>}{error && <p className="admin-upload-error">{error}</p>}
         {(editing || Object.keys(form).length > 0) && <form className="admin-editor admin-crud-form" onSubmit={submit}><div className="admin-editor-fields">{fieldNames[active].filter((key) => !(active === "exams" && key === "questions")).map((key) => <label key={key}>{key === "questions" ? "Extracted MCQ prompts" : key === "imageUrl" ? "Book image URL or upload" : key === "videoUrl" ? "Video URL or upload" : key === "educationLevel" ? "Education level" : key === "grade" ? "Grade" : key === "stream" ? "Stream" : key}{key === "questions" || key === "description" ? <textarea rows={key === "questions" ? 5 : 3} readOnly={key === "questions"} value={form[key] ?? ""} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /> : key === "role" ? <select value={form[key] ?? "STUDENT"} onChange={(event) => setForm({ ...form, [key]: event.target.value })}><option>STUDENT</option><option>TEACHER</option><option>ADMIN</option></select> : key === "educationLevel" ? <select required={active !== "users" || form.role === "STUDENT"} value={form[key] || (active === "users" ? "GCE Ordinary Level (O/L)" : "A_LEVEL")} onChange={(event) => setForm({ ...form, [key]: event.target.value, grade: "", stream: "" })}>{active === "users" ? <><option value="Grade 6–11">Grade 6–11</option><option value="GCE Ordinary Level (O/L)">GCE Ordinary Level (O/L)</option><option value="GCE Advanced Level (A/L)">GCE Advanced Level (A/L)</option></> : <><option value="GRADE">Grade 6–11</option><option value="O_LEVEL">O Level</option><option value="A_LEVEL">A Level</option></>}</select> : <><input required={!((editing && key === "password") || key === "thumbnail" || (key === "grade" && active === "users" && form.role !== "STUDENT") || (key === "grade" && active !== "users" && active !== "exams") || (key === "stream" && ((active === "users" && form.role !== "STUDENT") || academicLevel(form.educationLevel) !== "A_LEVEL")))} min={key === "durationMins" ? 1 : key === "grade" ? gradeRange(academicLevel(form.educationLevel) ?? "GRADE").min : undefined} max={key === "durationMins" ? 600 : key === "grade" ? gradeRange(academicLevel(form.educationLevel) ?? "GRADE").max : undefined} type={key === "password" ? "password" : key.includes("At") ? "datetime-local" : key === "price" || key.includes("Mins") || key === "grade" || key === "totalMarks" ? "number" : "text"} value={form[key] ?? ""} onChange={(event) => setForm({ ...form, [key]: event.target.value })} />{(key === "imageUrl" || key === "videoUrl") && <input type="file" accept={key === "imageUrl" ? "image/*" : "video/*"} onChange={(event) => { const file = event.target.files?.[0]; if (file) readMediaFile(file, (value) => setForm((current) => ({ ...current, [key]: value }))); }} />}</>}</label>)}{active === "exams" && <label>Question paper PDF, DOCX, or image<input type="file" accept=".pdf,.docx,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp" onChange={(event) => setExamFile(event.target.files?.[0] ?? null)} disabled={lockedQuestionCount > 0 || questionEditorLocked} /><button type="button" className="secondary-button" onClick={() => void extractExamQuestions()} disabled={lockedQuestionCount > 0 || questionEditorLocked || !examFile || extractingQuestions}>{extractingQuestions ? "Extracting..." : "Extract MCQ questions"}</button><small>Every PDF page is scanned. Scanned English, Sinhala, and Tamil papers are supported.</small></label>}{active !== "users" && <label>Published<select value={form.published ?? "false"} onChange={(event) => setForm({ ...form, published: event.target.value })}><option value="false">Draft</option><option value="true">Published</option></select></label>}</div>{active === "exams" && <>{editing && Number(editing.attemptCount ?? (Array.isArray(editing.attempts) ? editing.attempts.length : 0)) > 0 && <p className="admin-upload-status">{questionEditorLocked ? "A student is taking this exam. Wait until current attempts are submitted before adding questions." : "Existing questions and marks are protected. Add new questions at the end of the list."}</p>}<ExamQuestionEditor questions={examQuestions} onChange={setExamQuestions} onAdd={addManualQuestion} locked={questionEditorLocked} lockedCount={lockedQuestionCount} onProcessingChange={setProcessingQuestionImage} /></>}<div className="admin-editor-footer"><span>{status || (editing ? "Update this record." : "Create a new record.")}</span><div><button type="button" className="secondary-button" onClick={() => { setEditing(null); setForm({}); setExamFile(null); setExamQuestions([]); }}>Cancel</button><button type="submit" className="primary-button" disabled={loading || extractingQuestions || processingQuestionImage}>{processingQuestionImage ? "Processing question image..." : editing ? "Save changes" : "Create record"}</button></div></div></form>}
-        <section className="admin-record-list"><div className="admin-record-list-head"><strong>{items.length} {labels[active].toLowerCase()}</strong><button className="secondary-button" onClick={() => void loadItems(active)}>Refresh</button></div>{loading ? <p className="admin-empty">Loading records...</p> : items.length === 0 ? <p className="admin-empty">No records yet.</p> : items.map((item) => { const attempts = Array.isArray(item.attempts) ? item.attempts as Array<{ id: string; status: string; startedAt: string; submittedAt: string | null; answerFileName: string | null; user: { fullName: string; email: string; mobileNumber: string | null }; result: { obtainedMarks: number; totalMarks: number | null; percentage: number; passed: boolean } | null }> : []; return <div key={item.id}><article className="admin-record"><div><strong>{itemTitle(item, active)}</strong><small>{active === "exams" ? `${examState(item)} · ${new Date(String(item.startsAt)).toLocaleString()} – ${new Date(String(item.endsAt)).toLocaleString()} · ${attempts.length} student${attempts.length === 1 ? "" : "s"} started` : item.published ? "Published" : "Draft"}</small></div><div className="admin-record-actions">{active === "exams" && <button onClick={() => setViewingResults(viewingResults === item.id ? null : item.id)}>{viewingResults === item.id ? "Hide students" : "View students & marks"}</button>}<button onClick={() => openEdit(item)}>Edit</button><button className="danger-button" onClick={() => void remove(item)}>Delete</button></div></article>{active === "exams" && viewingResults === item.id && <div className="admin-results"><div className="admin-results-summary"><strong>{attempts.length} student{attempts.length === 1 ? "" : "s"} participated</strong><span>{attempts.filter((attempt) => attempt.result).length} submitted · {attempts.filter((attempt) => attempt.status === "IN_PROGRESS").length} in progress</span></div>{attempts.length === 0 ? <p className="admin-empty">No students have started this exam.</p> : <div className="admin-results-table-wrap"><table className="admin-results-table"><thead><tr><th>Student</th><th>Email</th><th>Mobile</th><th>Status</th><th>Started</th><th>Submitted</th><th>Answer sheet</th><th>Marks</th><th>Score</th><th>Admin action</th></tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.id}><td>{attempt.user.fullName}</td><td>{attempt.user.email}</td><td>{attempt.user.mobileNumber || "Not provided"}</td><td>{attempt.result ? attempt.result.passed ? "Passed" : "Submitted" : attempt.status === "IN_PROGRESS" ? "In progress" : "Expired"}</td><td>{new Date(attempt.startedAt).toLocaleString()}</td><td>{attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : "—"}</td><td>{attempt.answerFileName ? <a href={`/api/admin/exams/${item.id}/attempts/${attempt.id}/answer-sheet`}>Download {attempt.answerFileName}</a> : "—"}</td><td>{attempt.result ? `${attempt.result.obtainedMarks} / ${attempt.result.totalMarks ?? String(item.totalMarks)}` : "Pending"}</td><td>{attempt.result ? `${attempt.result.percentage.toFixed(1)}%` : "—"}</td><td><button type="button" className="danger-button" onClick={() => void removeAttempt(item, attempt)}>Remove attempt</button></td></tr>)}</tbody></table></div>}</div>}</div>; })}</section>
+        <section className="admin-record-list"><div className="admin-record-list-head"><strong>{items.length} {labels[active].toLowerCase()}</strong><button className="secondary-button" onClick={() => void loadItems(active)}>Refresh</button></div>{loading ? <p className="admin-empty">Loading records...</p> : items.length === 0 ? <p className="admin-empty">No records yet.</p> : active === "users" ? (() => {
+          const students = items.filter((item) => String(item.role).toUpperCase() === "STUDENT");
+          const otherAccounts = items.filter((item) => String(item.role).toUpperCase() !== "STUDENT");
+          const groups = new Map<string, Item[]>();
+          for (const student of students) {
+            const label = studentGroupLabel(student);
+            groups.set(label, [...(groups.get(label) ?? []), student]);
+          }
+          const sortedGroups = [...groups.entries()].sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }));
+          return <div className="admin-student-groups">
+            {sortedGroups.map(([label, groupItems]) => <section className="admin-student-grade-group" key={label}>
+              <header><h3>{label}</h3><span>{groupItems.length} student{groupItems.length === 1 ? "" : "s"}</span></header>
+              <div>{groupItems.map(renderRecord)}</div>
+            </section>)}
+            {otherAccounts.length > 0 && <section className="admin-student-grade-group">
+              <header><h3>Other accounts</h3><span>{otherAccounts.length} account{otherAccounts.length === 1 ? "" : "s"}</span></header>
+              <div>{otherAccounts.map(renderRecord)}</div>
+            </section>}
+          </div>;
+        })() : items.map(renderRecord)}</section>
       </div></div></section>
   </main>;
 }
