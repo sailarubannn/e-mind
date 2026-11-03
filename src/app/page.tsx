@@ -63,8 +63,9 @@ const pageTranslationRows = [
 type ExamQuestion = { id: string; prompt: string; imageUrl?: string | null; optionImages?: (string | null)[]; options: string[]; marks: number; type: string };
 type ExamReviewQuestion = { questionId: string; prompt: string; imageUrl?: string | null; optionImages?: (string | null)[]; options: string[]; selectedAnswer: string | null; correctAnswer: string; isCorrect: boolean };
 type ExamResult = { obtainedMarks: number; totalMarks: number; percentage: number; passed: boolean; review: ExamReviewQuestion[] };
-type ContentExam = { id: string; title: string; startsAt: string; durationMins: number; educationLevel: string; grade: number | null; stream: string | null; isQuiz?: boolean; subject: { name: string }; questions: ExamQuestion[] };
-type PublishedExam = { id: string; title: string; subject: string; startsAt: string; date: string; time: string; duration: string; durationMins: number; educationLevel: string; grade: number | null; stream: string | null; tone: string; questions: ExamQuestion[]; fileName: string; isQuiz: boolean };
+type StudentAttemptStatus = "IN_PROGRESS" | "SUBMITTED" | "EXPIRED";
+type ContentExam = { id: string; title: string; startsAt: string; durationMins: number; educationLevel: string; grade: number | null; stream: string | null; isQuiz?: boolean; canRetake?: boolean; studentAttemptStatus?: StudentAttemptStatus | null; subject: { name: string }; questions: ExamQuestion[] };
+type PublishedExam = { id: string; title: string; subject: string; startsAt: string; date: string; time: string; duration: string; durationMins: number; educationLevel: string; grade: number | null; stream: string | null; tone: string; questions: ExamQuestion[]; fileName: string; isQuiz: boolean; canRetake: boolean; studentAttemptStatus?: StudentAttemptStatus | null };
 
 function mapContentExam(exam: ContentExam): PublishedExam {
   const start = new Date(exam.startsAt);
@@ -84,6 +85,8 @@ function mapContentExam(exam: ContentExam): PublishedExam {
     questions: exam.questions,
     fileName: "Online exam",
     isQuiz: exam.isQuiz ?? false,
+    canRetake: exam.canRetake ?? Boolean(exam.isQuiz),
+    studentAttemptStatus: exam.studentAttemptStatus,
   };
 }
 
@@ -289,6 +292,7 @@ export default function Home() {
       const payload = await response.json() as ExamResult & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "The exam could not be submitted.");
       setExamResult(payload);
+      setContentExams((current) => current.map((exam) => exam.id === activeExam.id ? { ...exam, studentAttemptStatus: "SUBMITTED" } : exam));
       setAnswerSheetFile(null);
       setProgressRefreshKey((current) => current + 1);
       setExamOpen(false);
@@ -316,6 +320,7 @@ export default function Home() {
       if (!response.ok || !payload.expiresAt) throw new Error(payload.error ?? "This exam could not be started.");
       const deadline = Date.parse(payload.expiresAt);
       if (!Number.isFinite(deadline)) throw new Error("The exam returned an invalid time limit.");
+      setContentExams((current) => current.map((contentExam) => contentExam.id === exam.id ? { ...contentExam, studentAttemptStatus: "IN_PROGRESS" } : contentExam));
       setAttemptDeadline(deadline);
       setSeconds(payload.remainingSeconds ?? Math.max(0, Math.round(exam.durationMins * 60)));
       setExamOpen(true);
@@ -1155,7 +1160,7 @@ if (!authenticated) {
               : <div className="exam-list nav-exam-list">{quizExams.map((exam) => <article className={`exam-row ${exam.tone}`} key={exam.id}>
                 <div className="date-block"><strong>{exam.questions.length}</strong><span>QNS</span></div>
                 <div className="exam-info"><span className="subject-tag">{exam.subject}</span><h3>{exam.title}</h3><p>{exam.duration} <span>·</span> Quiz exam</p></div>
-                <button className="primary-button" onClick={() => openExam(exam)}>Start quiz <span>→</span></button>
+                <button className="primary-button" onClick={() => openExam(exam)}>{exam.studentAttemptStatus === "IN_PROGRESS" ? "Resume quiz" : exam.studentAttemptStatus === "SUBMITTED" || exam.studentAttemptStatus === "EXPIRED" ? "Retake quiz" : "Start quiz"} <span>→</span></button>
               </article>)}</div>}
           </section>}
 
@@ -1166,7 +1171,7 @@ if (!authenticated) {
               : <div className="exam-list nav-exam-list">{scheduledExams.map((exam) => <article className={`exam-row ${exam.tone}`} key={exam.id}>
                 <div className="date-block"><strong>{exam.date.split(" ")[0]}</strong><span>{exam.date.split(" ")[1]}</span></div>
                 <div className="exam-info"><span className="subject-tag">{exam.subject}</span><h3>{exam.title}</h3><p>{exam.time} <span>·</span> {exam.duration}</p></div>
-                <button className="primary-button" onClick={() => openExam(exam)}>Open exam <span>→</span></button>
+                <button className="primary-button" disabled={!exam.canRetake && (exam.studentAttemptStatus === "SUBMITTED" || exam.studentAttemptStatus === "EXPIRED")} onClick={() => openExam(exam)}>{exam.studentAttemptStatus === "IN_PROGRESS" ? "Resume exam" : exam.canRetake && (exam.studentAttemptStatus === "SUBMITTED" || exam.studentAttemptStatus === "EXPIRED") ? "Retake exam" : exam.studentAttemptStatus === "SUBMITTED" ? "Attempt complete" : exam.studentAttemptStatus === "EXPIRED" ? "Attempt expired" : "Open exam"} <span>→</span></button>
               </article>)}</div>}
           </section>}
 

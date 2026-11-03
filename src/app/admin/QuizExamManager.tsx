@@ -84,7 +84,6 @@ export default function QuizExamManager() {
   const [pasteError, setPasteError] = useState("");
   const [publishedQuizzes, setPublishedQuizzes] = useState<PublishedQuiz[]>([]);
   const [viewingAttempts, setViewingAttempts] = useState<string | null>(null);
-  const [reattemptingAttemptId, setReattemptingAttemptId] = useState<string | null>(null);
   const pasteBoxRef = useRef<HTMLDivElement>(null);
 
   const totalQuestions = Object.values(quizQuestions).flat().length;
@@ -98,25 +97,6 @@ export default function QuizExamManager() {
       setError("");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load quizzes.");
-    }
-  }
-
-  async function allowReattempt(quiz: PublishedQuiz, attempt: QuizAttempt) {
-    if (!window.confirm(`Allow ${attempt.user.fullName} to take "${quiz.title}" again? Their current attempt will be archived so its marks and timestamps remain available.`)) return;
-
-    setReattemptingAttemptId(attempt.id);
-    setError("");
-    setStatus("");
-    try {
-      const response = await fetch(`/api/admin/quizzes/${quiz.id}/attempts/${attempt.id}/reattempt`, { method: "POST" });
-      const result = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "Could not allow another attempt.");
-      setStatus(`${attempt.user.fullName} can now take "${quiz.title}" again. Their previous attempt is preserved in the history.`);
-      await loadQuizzes();
-    } catch (resetError) {
-      setError(resetError instanceof Error ? resetError.message : "Could not allow another attempt. Check your connection and try again.");
-    } finally {
-      setReattemptingAttemptId(null);
     }
   }
 
@@ -329,13 +309,13 @@ export default function QuizExamManager() {
                 </article>
                 {viewingAttempts === quiz.id && <div className="admin-results">
                   <div className="admin-results-summary">
-                    <strong>{quiz.attempts.length} student{quiz.attempts.length === 1 ? "" : "s"} attempted</strong>
+                    <strong>{quiz.attempts.length} attempt{quiz.attempts.length === 1 ? "" : "s"} recorded</strong>
                     <span>{quiz.attempts.filter((attempt) => attempt.result).length} submitted · {quiz.attempts.filter((attempt) => attempt.status === "IN_PROGRESS").length} in progress</span>
                   </div>
                   {quiz.attempts.length === 0
                     ? <p className="admin-empty">No students have started this quiz.</p>
                     : <div className="admin-results-table-wrap"><table className="admin-results-table">
-                      <thead><tr><th>Student</th><th>Email</th><th>Mobile</th><th>Status</th><th>Started</th><th>Submitted</th><th>Answer sheet</th><th>Marks</th><th>Score</th><th>Admin action</th></tr></thead>
+                      <thead><tr><th>Student</th><th>Email</th><th>Mobile</th><th>Status</th><th>Started</th><th>Submitted</th><th>Answer sheet</th><th>Marks</th><th>Score</th></tr></thead>
                       <tbody>{quiz.attempts.map((attempt) => {
                         const inProgress = attempt.status === "IN_PROGRESS";
                         const result = attempt.result;
@@ -349,13 +329,6 @@ export default function QuizExamManager() {
                           <td>{attempt.answerFileName ? <a href={`/api/admin/exams/${quiz.id}/attempts/${attempt.id}/answer-sheet`}>Download {attempt.answerFileName}</a> : "—"}</td>
                           <td>{result ? `${result.obtainedMarks} / ${result.totalMarks ?? quiz.questions.length}` : "Pending"}</td>
                           <td>{result ? `${result.percentage.toFixed(1)}%` : "—"}</td>
-                          <td>{attempt.isHistory ? <span>Previous attempt</span> : <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={inProgress || reattemptingAttemptId === attempt.id}
-                            title={inProgress ? "The student must finish or run out of time first." : undefined}
-                            onClick={() => void allowReattempt(quiz, attempt)}
-                          >{reattemptingAttemptId === attempt.id ? "Resetting..." : "Allow reattempt"}</button>}</td>
                         </tr>;
                       })}</tbody>
                     </table></div>}
