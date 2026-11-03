@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import ExamQuestionEditor from "./admin/ExamQuestionEditor";
 import WrittenPaperAttempt from "./WrittenPaperAttempt";
 import StudentProgress from "./StudentProgress";
+import StudentNotifications from "./StudentNotifications";
 import { gradesForEducationLevel, isAcademicProfileComplete, matchesAcademicAudience, academicLevel } from "@/lib/academic-eligibility";
 
 declare global {
@@ -250,8 +251,6 @@ export default function Home() {
   const [compactLayout, setCompactLayout] = useState(false);
   const [language, setLanguage] = useState("English");
   const [settingsSaved, setSettingsSaved] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [unreadNotifications, setUnreadNotifications] = useState(2);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantMessages, setAssistantMessages] = useState<{ from: "assistant" | "user"; text: string }[]>([]);
   const [assistantInput, setAssistantInput] = useState("");
@@ -592,7 +591,7 @@ export default function Home() {
       const translated = replacements.get(trimmed);
       if (translated) textNode.nodeValue = textNode.nodeValue?.replace(trimmed, translated) ?? translated;
     });
-  }, [language, activeNav, authenticated, authView, notificationsOpen, assistantOpen]);
+  }, [language, activeNav, authenticated, authView, assistantOpen]);
 
   const formattedTime = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   const availableSubjects = streamSubjects[stream] ?? [];
@@ -1111,7 +1110,14 @@ if (!authenticated) {
       </nav>
 
       <section className="content-area">
-        <header className="topbar"><div className="mobile-brand">E-mind<span>.</span></div><div className="breadcrumb">Workspace <span>/</span> {activeNav === "Overview" ? text.overview : activeNav === "My learning" ? text.learning : activeNav === "Examinations" ? text.examinations : activeNav === "Progress" ? text.progress : activeNav === "Book shop" ? text.shop : text.settings}</div><div className="top-actions"><div className="notification-wrap"><button className="icon-button" aria-label={text.notifications} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}>♧{unreadNotifications > 0 && <span className="notification-dot" />}</button>{notificationsOpen && <section className="notification-panel" role="dialog" aria-label={text.notifications}><div className="notification-head"><div><span className="eyebrow">YOUR UPDATES</span><h2>{text.notifications}</h2></div><button className="notification-close" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications">×</button></div><div className="notification-list"><article className={unreadNotifications > 0 ? "notification-item unread" : "notification-item"}><span className="notification-symbol">◷</span><div><strong>Physics exam reminder</strong><p>Your Unit 04 examination is on 24 Sep at 02:00 PM.</p><small>Today</small></div></article><article className={unreadNotifications > 1 ? "notification-item unread" : "notification-item"}><span className="notification-symbol">✦</span><div><strong>New learning insight</strong><p>You are close to mastering Physics. Keep practising vectors.</p><small>Yesterday</small></div></article></div><button className="mark-read-button" onClick={() => setUnreadNotifications(0)}>{unreadNotifications > 0 ? "Mark all as read" : "All caught up"}</button></section>}</div><button className="top-avatar" onClick={() => setProfileOpen(true)} aria-label="Open profile">{getInitials(profile.fullName)}</button></div></header>
+        <header className="topbar">
+          <div className="mobile-brand">E-mind<span>.</span></div>
+          <div className="breadcrumb">Workspace <span>/</span> {activeNav === "Overview" ? text.overview : activeNav === "My learning" ? text.learning : activeNav === "Examinations" ? text.examinations : activeNav === "Progress" ? text.progress : activeNav === "Book shop" ? text.shop : text.settings}</div>
+          <div className="top-actions">
+            {authenticated && userRole === "student" && <StudentNotifications label={text.notifications} />}
+            <button className="top-avatar" onClick={() => setProfileOpen(true)} aria-label="Open profile">{getInitials(profile.fullName)}</button>
+          </div>
+        </header>
         <div className="page-content">
           {userRole === "student" && !academicProfileComplete && <p className="admin-upload-error" role="alert">Your academic profile is missing a valid grade or A/L stream. Ask an administrator to update it before exams and question papers can be displayed.</p>}
           {activeNav === "Overview" && <>

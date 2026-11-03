@@ -40,23 +40,24 @@ enum EvaluationStatus {
 }
 
 model User {
-  id                 String                 @id @default(auto()) @map("_id") @db.ObjectId
-  email              String                 @unique
-  passwordHash       String?
-  fullName           String
-  mobileNumber       String?
-  role               Role                   @default(STUDENT)
-  educationLevel     String?
-  grade              Int?
-  stream             String?
-  subjects           Json?
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
-  profile            StudentProfile?
-  attempts           ExamAttempt[]
-  quizAttemptHistory QuizAttemptHistory[]
-  learning           LearningHistory[]
-  analytics          PerformanceAnalytics[]
+  id                      String                   @id @default(auto()) @map("_id") @db.ObjectId
+  email                   String                   @unique
+  passwordHash            String?
+  fullName                String
+  mobileNumber            String?
+  role                    Role                     @default(STUDENT)
+  educationLevel          String?
+  grade                   Int?
+  stream                  String?
+  subjects                Json?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  profile                 StudentProfile?
+  attempts                ExamAttempt[]
+  quizAttemptHistory      QuizAttemptHistory[]
+  marksSheetNotifications MarksSheetNotification[]
+  learning                LearningHistory[]
+  analytics               PerformanceAnalytics[]
 }
 
 model StudentProfile {
@@ -93,23 +94,28 @@ model StudentSubject {
 }
 
 model Exam {
-  id                 String               @id @default(auto()) @map("_id") @db.ObjectId
-  title              String
-  description        String?
-  educationLevel     EducationLevel
-  grade              Int?
-  stream             String?
-  durationMins       Int
-  totalMarks         Int
-  startsAt           DateTime
-  endsAt             DateTime
-  isQuiz             Boolean              @default(false)
-  published          Boolean              @default(false)
-  subjectId          String               @db.ObjectId
-  subject            Subject              @relation(fields: [subjectId], references: [id])
-  questions          Question[]
-  attempts           ExamAttempt[]
-  quizAttemptHistory QuizAttemptHistory[]
+  id                      String                   @id @default(auto()) @map("_id") @db.ObjectId
+  title                   String
+  description             String?
+  educationLevel          EducationLevel
+  grade                   Int?
+  stream                  String?
+  durationMins            Int
+  totalMarks              Int
+  startsAt                DateTime
+  endsAt                  DateTime
+  isQuiz                  Boolean                  @default(false)
+  published               Boolean                  @default(false)
+  subjectId               String                   @db.ObjectId
+  subject                 Subject                  @relation(fields: [subjectId], references: [id])
+  questions               Question[]
+  attempts                ExamAttempt[]
+  quizAttemptHistory      QuizAttemptHistory[]
+  marksSheetFileName      String?
+  marksSheetMimeType      String?
+  marksSheetDocument      Bytes?
+  marksSheetPublishedAt   DateTime?
+  marksSheetNotifications MarksSheetNotification[]
 }
 
 model Question {
@@ -129,43 +135,56 @@ model Question {
 }
 
 model ExamAttempt {
-  id          String          @id @default(auto()) @map("_id") @db.ObjectId
-  examId      String          @db.ObjectId
-  userId      String          @db.ObjectId
-  status      AttemptStatus   @default(IN_PROGRESS)
-  startedAt   DateTime        @default(now())
-  submittedAt DateTime?
-  expiresAt   DateTime
+  id             String          @id @default(auto()) @map("_id") @db.ObjectId
+  examId         String          @db.ObjectId
+  userId         String          @db.ObjectId
+  status         AttemptStatus   @default(IN_PROGRESS)
+  startedAt      DateTime        @default(now())
+  submittedAt    DateTime?
+  expiresAt      DateTime
   answerFileName String?
   answerMimeType String?
   answerDocument Bytes?
-  exam        Exam            @relation(fields: [examId], references: [id])
-  user        User            @relation(fields: [userId], references: [id])
-  answers     StudentAnswer[]
-  result      Result?
+  exam           Exam            @relation(fields: [examId], references: [id])
+  user           User            @relation(fields: [userId], references: [id])
+  answers        StudentAnswer[]
+  result         Result?
 
   @@unique([examId, userId])
 }
 
 model QuizAttemptHistory {
-  id            String        @id @default(auto()) @map("_id") @db.ObjectId
-  examId        String        @db.ObjectId
-  userId        String        @db.ObjectId
-  status        AttemptStatus
-  startedAt     DateTime
-  submittedAt   DateTime?
-  expiresAt     DateTime
-  obtainedMarks Float?
-  totalMarks    Float?
-  percentage    Float?
-  passed        Boolean?
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  examId         String        @db.ObjectId
+  userId         String        @db.ObjectId
+  status         AttemptStatus
+  startedAt      DateTime
+  submittedAt    DateTime?
+  expiresAt      DateTime
+  obtainedMarks  Float?
+  totalMarks     Float?
+  percentage     Float?
+  passed         Boolean?
   answerFileName String?
   answerMimeType String?
   answerDocument Bytes?
-  archivedAt    DateTime      @default(now())
-  exam          Exam          @relation(fields: [examId], references: [id], onDelete: Cascade)
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  archivedAt     DateTime      @default(now())
+  exam           Exam          @relation(fields: [examId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([examId, userId])
+}
+
+model MarksSheetNotification {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  examId    String    @db.ObjectId
+  userId    String    @db.ObjectId
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+  exam      Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
   @@index([examId, userId])
 }
 
@@ -240,23 +259,23 @@ model Video {
 }
 
 model WrittenPaper {
-  id             String         @id @default(auto()) @map("_id") @db.ObjectId
-  title          String
-  subject        String
-  educationLevel EducationLevel
-  grade          Int?
-  stream         String?
-  fileName       String
-  durationMins   Int?           @default(60)
-  mimeType       String
-  document       Bytes
-  published      Boolean        @default(false)
-  answerSchemeFileName String?
-  answerSchemeMimeType String?
-  answerSchemeDocument Bytes?
-  answerSchemePublished Boolean @default(false)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                    String         @id @default(auto()) @map("_id") @db.ObjectId
+  title                 String
+  subject               String
+  educationLevel        EducationLevel
+  grade                 Int?
+  stream                String?
+  fileName              String
+  durationMins          Int?           @default(60)
+  mimeType              String
+  document              Bytes
+  published             Boolean        @default(false)
+  answerSchemeFileName  String?
+  answerSchemeMimeType  String?
+  answerSchemeDocument  Bytes?
+  answerSchemePublished Boolean        @default(false)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 }
 
 model WrittenPaperAttempt {

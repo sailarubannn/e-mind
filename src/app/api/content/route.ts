@@ -13,7 +13,33 @@ export async function GET() {
   const [books, videos, exams, writtenPapers] = await Promise.all([
     prisma.book.findMany({ where: { published: true }, orderBy: { createdAt: "desc" } }),
     prisma.video.findMany({ where: { published: true }, orderBy: { createdAt: "desc" } }),
-    prisma.exam.findMany({ where: { published: true }, orderBy: { startsAt: "asc" }, include: { subject: true, questions: { orderBy: { id: "asc" }, select: { id: true, prompt: true, imageUrl: true, optionImages: true, options: true, marks: true, type: true } } } }),
+    prisma.exam.findMany({
+      where: { published: true },
+      orderBy: { startsAt: "asc" },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        educationLevel: true,
+        grade: true,
+        stream: true,
+        durationMins: true,
+        totalMarks: true,
+        startsAt: true,
+        endsAt: true,
+        isQuiz: true,
+        published: true,
+        subjectId: true,
+        marksSheetFileName: true,
+        marksSheetMimeType: true,
+        marksSheetPublishedAt: true,
+        subject: true,
+        questions: {
+          orderBy: { id: "asc" },
+          select: { id: true, prompt: true, imageUrl: true, optionImages: true, options: true, marks: true, type: true },
+        },
+      },
+    }),
     prisma.writtenPaper.findMany({ where: { published: true }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, subject: true, educationLevel: true, grade: true, stream: true, fileName: true, durationMins: true, answerSchemePublished: true, createdAt: true } }),
   ]);
   const studentAttempts = user?.role === "student"

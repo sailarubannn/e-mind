@@ -54,7 +54,23 @@ export async function GET(request: Request, context: { params: Promise<{ resourc
   if (resource === "videos") return NextResponse.json({ items: await prisma.video.findMany({ orderBy: { createdAt: "desc" } }) });
   const exams = await prisma.exam.findMany({
     orderBy: { startsAt: "desc" },
-    include: {
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      educationLevel: true,
+      grade: true,
+      stream: true,
+      durationMins: true,
+      totalMarks: true,
+      startsAt: true,
+      endsAt: true,
+      isQuiz: true,
+      published: true,
+      subjectId: true,
+      marksSheetFileName: true,
+      marksSheetMimeType: true,
+      marksSheetPublishedAt: true,
       subject: true,
       questions: { orderBy: { id: "asc" } },
       attempts: {
@@ -68,13 +84,15 @@ export async function GET(request: Request, context: { params: Promise<{ resourc
     },
   });
   const now = Date.now();
-  const items = exams.map((exam) => ({
-    ...exam,
-    attempts: exam.attempts.map((attempt) => ({
-      ...attempt,
-      status: attempt.status === "IN_PROGRESS" && attempt.expiresAt.getTime() <= now ? "EXPIRED" : attempt.status,
-    })),
-  }));
+  const items = exams.map((exam) => {
+    return {
+      ...exam,
+      attempts: exam.attempts.map((attempt) => ({
+        ...attempt,
+        status: attempt.status === "IN_PROGRESS" && attempt.expiresAt.getTime() <= now ? "EXPIRED" : attempt.status,
+      })),
+    };
+  });
   return NextResponse.json({ items });
 }
 
