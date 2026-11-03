@@ -66,7 +66,10 @@ function itemTitle(item: Item, resource: Resource) {
 function studentGroupLabel(item: Item) {
   const grade = Number(item.grade);
   const level = academicLevel(typeof item.educationLevel === "string" ? item.educationLevel : null);
-  const gradeLabel = Number.isInteger(grade) ? `Grade ${grade}` : "Grade not set";
+  const range = level ? gradeRange(level) : null;
+  const gradeIsValid = Number.isInteger(grade) && grade > 0
+    && (!range || (grade >= range.min && grade <= range.max));
+  const gradeLabel = gradeIsValid ? `Grade ${grade}` : "Grade not set";
   if (level === "O_LEVEL") return `O/L · ${gradeLabel}`;
   if (level === "A_LEVEL") return `A/L · ${gradeLabel}${typeof item.stream === "string" && item.stream.trim() ? ` · ${item.stream.trim()}` : ""}`;
   return gradeLabel;
