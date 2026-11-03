@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getMongoUser } from "@/lib/auth";
+import { isValidAcademicAudience } from "@/lib/academic-eligibility";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
   const title = String(form.get("title") ?? "").trim();
   const subject = String(form.get("subject") ?? "").trim();
   const levelValue = String(form.get("educationLevel") ?? "GRADE");
-  const educationLevel = levelValue === "A_LEVEL" || levelValue === "O_LEVEL" ? levelValue : "GRADE";
+  const educationLevel = levelValue === "A_LEVEL" || levelValue === "O_LEVEL" || levelValue === "GRADE" ? levelValue : null;
   const gradeValue = String(form.get("grade") ?? "").trim();
   const streamValue = String(form.get("stream") ?? "").trim();
   const published = form.get("published") === "true";
@@ -55,8 +56,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Add a title, subject, and a duration from 1 to 600 minutes." }, { status: 400 });
   }
   const grade = gradeValue ? Number(gradeValue) : null;
-  if (grade !== null && (!Number.isInteger(grade) || grade < 1 || grade > 13)) {
-    return NextResponse.json({ error: "Choose a valid grade from 1 to 13." }, { status: 400 });
+  if (!educationLevel || grade === null || !isValidAcademicAudience(educationLevel, grade, streamValue)) {
+    return NextResponse.json({ error: "Choose a valid grade for this education level; A/L papers also need a stream." }, { status: 400 });
   }
 
   const paper = await prisma.writtenPaper.create({

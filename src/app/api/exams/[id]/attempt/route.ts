@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getMongoUser } from "@/lib/auth";
+import { matchesAcademicAudience } from "@/lib/academic-eligibility";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -14,9 +15,10 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   const { id: examId } = await context.params;
   const exam = await prisma.exam.findFirst({
     where: { id: examId, published: true },
-    select: { id: true, durationMins: true },
+    select: { id: true, durationMins: true, educationLevel: true, grade: true, stream: true },
   });
   if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
+  if (!matchesAcademicAudience(user, exam)) return NextResponse.json({ error: "This exam is not available for your grade or stream." }, { status: 403 });
   if (!Number.isInteger(exam.durationMins) || exam.durationMins < 1) {
     return NextResponse.json({ error: "This exam has an invalid duration." }, { status: 409 });
   }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getMongoUser } from "@/lib/auth";
+import { academicLevel, isValidAcademicAudience } from "@/lib/academic-eligibility";
 import { resolveOptionAnswer } from "@/lib/exam-answers";
 import { prisma } from "@/lib/prisma";
 
@@ -34,16 +35,29 @@ export async function PATCH(request: Request, context: { params: Promise<{ resou
   try {
     const body = await request.json() as Record<string, unknown>;
     if (resource === "users") {
-      const data: { fullName?: string; role?: "STUDENT" | "ADMIN" | "TEACHER"; educationLevel?: string | null; stream?: string | null; passwordHash?: string } = {};
+      const current = await prisma.user.findUnique({ where: { id }, select: { role: true, educationLevel: true, grade: true, stream: true } });
+      if (!current) return NextResponse.json({ error: "User not found." }, { status: 404 });
+      const data: { fullName?: string; role?: "STUDENT" | "ADMIN" | "TEACHER"; educationLevel?: string | null; grade?: number | null; stream?: string | null; passwordHash?: string } = {};
       if (body.fullName !== undefined) data.fullName = String(body.fullName);
       if (body.role === "STUDENT" || body.role === "ADMIN" || body.role === "TEACHER") data.role = body.role;
       if (body.educationLevel !== undefined) data.educationLevel = body.educationLevel ? String(body.educationLevel) : null;
+      if (body.grade !== undefined) data.grade = body.grade === "" || body.grade === null ? null : Number(body.grade);
       if (body.stream !== undefined) data.stream = body.stream ? String(body.stream) : null;
+      const role = data.role ?? current.role;
+      const educationLevel = data.educationLevel === undefined ? current.educationLevel : data.educationLevel;
+      const grade = data.grade === undefined ? current.grade : data.grade;
+      const stream = data.stream === undefined ? current.stream : data.stream;
+      if (role === "STUDENT" && (body.role !== undefined || body.educationLevel !== undefined || body.grade !== undefined || body.stream !== undefined)) {
+        const level = academicLevel(educationLevel);
+        if (!level || grade === null || !isValidAcademicAudience(level, grade, stream)) {
+          return NextResponse.json({ error: "Choose a valid education level and matching grade; A/L students also need a stream." }, { status: 400 });
+        }
+      }
       if (body.password) {
         const { hashPassword } = await import("@/lib/auth");
         data.passwordHash = await hashPassword(String(body.password));
       }
-      return NextResponse.json({ item: await prisma.user.update({ where: { id }, data, select: { id: true, email: true, fullName: true, role: true, educationLevel: true, stream: true } }) });
+      return NextResponse.json({ item: await prisma.user.update({ where: { id }, data, select: { id: true, email: true, fullName: true, role: true, educationLevel: true, grade: true, stream: true } }) });
     }
     if (resource === "books") return NextResponse.json({ item: await prisma.book.update({ where: { id }, data: { ...body, price: body.price === undefined ? undefined : Number(body.price) } }) });
     if (resource === "videos") return NextResponse.json({ item: await prisma.video.update({ where: { id }, data: body }) });
@@ -66,6 +80,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ resou
         durationMins, startsAt, endsAt,
         published: body.published === undefined ? current.published : Boolean(body.published),
       };
+      const audienceLevel = data.educationLevel;
+      if ((audienceLevel !== "A_LEVEL" && audienceLevel !== "O_LEVEL" && audienceLevel !== "GRADE")
+        || !isValidAcademicAudience(audienceLevel, Number(data.grade), typeof data.stream === "string" ? data.stream : null)) {
+        return NextResponse.json({ error: "Choose a valid grade for this education level; A/L exams also need a stream." }, { status: 400 });
+      }
       if (body.subject !== undefined) {
         const subjectName = String(body.subject).trim();
         if (!subjectName) return NextResponse.json({ error: "Subject is required." }, { status: 400 });

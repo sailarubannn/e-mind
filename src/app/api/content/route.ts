@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { isQuizExam } from "@/lib/is-quiz-exam";
+import { getMongoUser } from "@/lib/auth";
+import { matchesAcademicAudience } from "@/lib/academic-eligibility";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  const user = await getMongoUser();
   const [books, videos, exams, writtenPapers] = await Promise.all([
     prisma.book.findMany({ where: { published: true }, orderBy: { createdAt: "desc" } }),
     prisma.video.findMany({ where: { published: true }, orderBy: { createdAt: "desc" } }),
@@ -16,7 +19,7 @@ export async function GET() {
   return NextResponse.json({
     books,
     videos,
-    exams: exams.map((exam) => ({ ...exam, isQuiz: isQuizExam(exam) })),
-    writtenPapers: writtenPapers.map((paper) => ({ ...paper, durationMins: paper.durationMins ?? 60 })),
+    exams: exams.filter((exam) => user?.role !== "student" || matchesAcademicAudience(user, exam)).map((exam) => ({ ...exam, isQuiz: isQuizExam(exam) })),
+    writtenPapers: writtenPapers.filter((paper) => user?.role !== "student" || matchesAcademicAudience(user, paper)).map((paper) => ({ ...paper, durationMins: paper.durationMins ?? 60 })),
   });
 }

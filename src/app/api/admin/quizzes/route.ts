@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getMongoUser } from "@/lib/auth";
 import { isQuizExam } from "@/lib/is-quiz-exam";
+import { isValidAcademicAudience } from "@/lib/academic-eligibility";
 import { resolveOptionAnswer } from "@/lib/exam-answers";
 import { prisma } from "@/lib/prisma";
 
@@ -49,15 +50,18 @@ export async function POST(request: Request) {
 
     const title = String(body.title ?? "").trim();
     const subjectName = String(body.subject ?? "").trim();
-    const educationLevel = body.educationLevel === "A_LEVEL" || body.educationLevel === "O_LEVEL" || body.educationLevel === "GRADE" ? body.educationLevel : "GRADE";
+    const educationLevel = body.educationLevel === "A_LEVEL" || body.educationLevel === "O_LEVEL" || body.educationLevel === "GRADE" ? body.educationLevel : null;
     const grade = body.grade ? Number(body.grade) : null;
-    const stream = body.stream ? String(body.stream) : null;
+    const stream = body.stream ? String(body.stream).trim() : null;
     const description = body.description ? String(body.description) : null;
     const durationMins = Number(body.durationMins ?? 30);
     const questions = quizQuestions(body.questions);
 
     if (!title || !subjectName) {
       return NextResponse.json({ error: "Title and subject are required." }, { status: 400 });
+    }
+    if (!educationLevel || grade === null || !isValidAcademicAudience(educationLevel, grade, stream)) {
+      return NextResponse.json({ error: "Choose a valid grade for this education level; A/L quizzes also need a stream." }, { status: 400 });
     }
 
     if (questions.length === 0) {

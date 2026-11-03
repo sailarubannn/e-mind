@@ -47,6 +47,7 @@ model User {
   mobileNumber       String?
   role               Role                   @default(STUDENT)
   educationLevel     String?
+  grade              Int?
   stream             String?
   subjects           Json?
   createdAt          DateTime               @default(now())

@@ -21,17 +21,19 @@ export type AuthUser = {
   fullName: string;
   role: "student" | "admin" | "teacher";
   educationLevel: string | null;
+  grade: number | null;
   stream: string | null;
   subjects: string[];
 };
 
-function toAuthUser(user: { id: string; email: string; fullName: string; role: string; educationLevel: string | null; stream: string | null; subjects: unknown }): AuthUser {
+function toAuthUser(user: { id: string; email: string; fullName: string; role: string; educationLevel: string | null; grade: number | null; stream: string | null; subjects: unknown }): AuthUser {
   return {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
     role: user.role.toLowerCase() as AuthUser["role"],
     educationLevel: user.educationLevel,
+    grade: user.grade,
     stream: user.stream,
     subjects: Array.isArray(user.subjects) ? user.subjects.filter((subject): subject is string => typeof subject === "string") : [],
   };

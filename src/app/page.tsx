@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import ExamQuestionEditor from "./admin/ExamQuestionEditor";
 import WrittenPaperAttempt from "./WrittenPaperAttempt";
 import StudentProgress from "./StudentProgress";
+import { gradesForEducationLevel, isAcademicProfileComplete, matchesAcademicAudience, academicLevel } from "@/lib/academic-eligibility";
 
 declare global {
   interface Window {
@@ -62,8 +63,8 @@ const pageTranslationRows = [
 type ExamQuestion = { id: string; prompt: string; imageUrl?: string | null; optionImages?: (string | null)[]; options: string[]; marks: number; type: string };
 type ExamReviewQuestion = { questionId: string; prompt: string; imageUrl?: string | null; optionImages?: (string | null)[]; options: string[]; selectedAnswer: string | null; correctAnswer: string; isCorrect: boolean };
 type ExamResult = { obtainedMarks: number; totalMarks: number; percentage: number; passed: boolean; review: ExamReviewQuestion[] };
-type ContentExam = { id: string; title: string; startsAt: string; durationMins: number; isQuiz?: boolean; subject: { name: string }; questions: ExamQuestion[] };
-type PublishedExam = { id: string; title: string; subject: string; startsAt: string; date: string; time: string; duration: string; durationMins: number; tone: string; questions: ExamQuestion[]; fileName: string; isQuiz: boolean };
+type ContentExam = { id: string; title: string; startsAt: string; durationMins: number; educationLevel: string; grade: number | null; stream: string | null; isQuiz?: boolean; subject: { name: string }; questions: ExamQuestion[] };
+type PublishedExam = { id: string; title: string; subject: string; startsAt: string; date: string; time: string; duration: string; durationMins: number; educationLevel: string; grade: number | null; stream: string | null; tone: string; questions: ExamQuestion[]; fileName: string; isQuiz: boolean };
 
 function mapContentExam(exam: ContentExam): PublishedExam {
   const start = new Date(exam.startsAt);
@@ -76,6 +77,9 @@ function mapContentExam(exam: ContentExam): PublishedExam {
     time: start.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
     duration: `${exam.durationMins} min`,
     durationMins: exam.durationMins,
+    educationLevel: exam.educationLevel,
+    grade: exam.grade,
+    stream: exam.stream,
     tone: "mint",
     questions: exam.questions,
     fileName: "Online exam",
@@ -151,6 +155,7 @@ type StudentProfile = {
   fullName: string;
   email: string;
   educationLevel: string;
+  grade: number | null;
   stream: string;
   subjects: string[];
 };
@@ -159,6 +164,7 @@ type AuthResponseUser = {
   email?: string | null;
   fullName?: string;
   educationLevel?: string | null;
+  grade?: number | null;
   stream?: string | null;
   subjects?: string[];
   role?: string;
@@ -172,6 +178,7 @@ function profileFromUser(user: AuthResponseUser | null): StudentProfile {
     fullName: user?.fullName?.trim() || emailName,
     email,
     educationLevel: user?.educationLevel || "Not provided",
+    grade: typeof user?.grade === "number" ? user.grade : null,
     stream: user?.stream || "Not provided",
     subjects: user?.subjects ?? [],
   };
@@ -182,7 +189,7 @@ function getInitials(name: string) {
 }
 
 function ProfileModal({ profile, onClose, onSignOut }: { profile: StudentProfile; onClose: () => void; onSignOut: () => void }) {
-  const academicDetails = [profile.educationLevel, profile.stream !== "Not provided" ? profile.stream : "", profile.subjects.length ? profile.subjects.join(", ") : ""].filter(Boolean).join(" · ");
+  const academicDetails = [profile.educationLevel, profile.grade ? `Grade ${profile.grade}` : "", profile.stream !== "Not provided" ? profile.stream : "", profile.subjects.length ? profile.subjects.join(", ") : ""].filter(Boolean).join(" · ");
 
   return <div className="modal-backdrop"><section className="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-title"><div className="profile-modal-head"><div className="profile-hero"><div className="profile-large-avatar">{getInitials(profile.fullName)}</div><div><span className="eyebrow">STUDENT PROFILE</span><h2 id="profile-title">{profile.fullName}</h2><p>{academicDetails || "Student account"}</p></div></div><button className="close-button" onClick={onClose} aria-label="Close profile">×</button></div><div className="profile-form"><label>Full name<input value={profile.fullName} readOnly /></label><label>Email address<input value={profile.email} readOnly type="email" /></label><div className="profile-two-col"><label>Education level<input value={profile.educationLevel} readOnly /></label><label>Stream<input value={profile.stream} readOnly /></label></div><label>Subjects<input value={profile.subjects.length ? profile.subjects.join(", ") : "Not provided"} readOnly /></label></div><div className="profile-modal-foot"><button className="signout-button" onClick={onSignOut}>Sign out</button><div><button className="secondary-button" onClick={onClose}>Close</button></div></div></section></div>;
 }
@@ -199,13 +206,13 @@ export default function Home() {
   const [contentError, setContentError] = useState("");
   const [landingStats, setLandingStats] = useState<LandingStats | null>(null);
   const [landingStatsError, setLandingStatsError] = useState(false);
-  const [writtenPapers, setWrittenPapers] = useState<PublishedWrittenPaper[]>([]);
+  const [allWrittenPapers, setAllWrittenPapers] = useState<PublishedWrittenPaper[]>([]);
   const [authView, setAuthView] = useState<"login" | "signup">("login");
   const [showAuthPanel, setShowAuthPanel] = useState(false);
   const [fullName, setFullName] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
   const [email, setEmail] = useState("");
-  const [profile, setProfile] = useState<StudentProfile>({ fullName: "Student", email: "", educationLevel: "Not provided", stream: "Not provided", subjects: [] });
+  const [profile, setProfile] = useState<StudentProfile>({ fullName: "Student", email: "", educationLevel: "Not provided", grade: null, stream: "Not provided", subjects: [] });
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [authMessage, setAuthMessage] = useState("");
@@ -231,6 +238,7 @@ export default function Home() {
   const [examError, setExamError] = useState("");
   const submitExamRef = useRef<() => Promise<void>>(async () => undefined);
   const [educationLevel, setEducationLevel] = useState("");
+  const [studentGrade, setStudentGrade] = useState("");
   const [stream, setStream] = useState("");
   const [subjects, setSubjects] = useState<string[]>([]);
   const [subjectError, setSubjectError] = useState(false);
@@ -247,7 +255,11 @@ export default function Home() {
   const text = translations[language as keyof typeof translations];
   const activeExam = publishedExam ?? contentExams.find((exam) => exam.id === activeExamId) ?? contentExams[0] ?? null;
   const questions = activeExam?.questions ?? [];
-  const exams = publishedExam ? [publishedExam, ...contentExams] : contentExams;
+  const allExams = publishedExam ? [publishedExam, ...contentExams] : contentExams;
+  const academicProfile = { educationLevel: profile.educationLevel === "Not provided" ? null : profile.educationLevel, grade: profile.grade, stream: profile.stream === "Not provided" ? null : profile.stream };
+  const exams = userRole === "student" ? allExams.filter((exam) => matchesAcademicAudience(academicProfile, exam)) : allExams;
+  const writtenPapers = userRole === "student" ? allWrittenPapers.filter((paper) => matchesAcademicAudience(academicProfile, paper)) : allWrittenPapers;
+  const academicProfileComplete = isAcademicProfileComplete(academicProfile);
   const quizExams = exams.filter((exam) => exam.isQuiz);
   const scheduledExams = exams.filter((exam) => !exam.isQuiz);
   const learningCategories: LearningShowcaseCard[] = [
@@ -318,6 +330,7 @@ export default function Home() {
     setFullName(nextProfile.fullName);
     setEmail(nextProfile.email);
     setEducationLevel(nextProfile.educationLevel === "Not provided" ? "" : nextProfile.educationLevel);
+    setStudentGrade(nextProfile.grade ? String(nextProfile.grade) : "");
     setStream(nextProfile.stream === "Not provided" ? "" : nextProfile.stream);
     setSubjects(nextProfile.subjects);
     setAssistantMessages([{ from: "assistant", text: `Hi ${nextProfile.fullName}. I can help with your exams, learning plan, books, or account settings.` }]);
@@ -340,12 +353,16 @@ export default function Home() {
       setSubjectError(true);
       return;
     }
+    if (authView === "signup" && (!academicLevel(educationLevel) || !studentGrade)) {
+      setAuthError("Choose your education level and grade before creating your account.");
+      return;
+    }
 
     setAuthLoading(true);
 
     try {
       if (authView === "signup") {
-        const response = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "signup", email, password, fullName, mobileNumber, educationLevel, stream, subjects }) });
+        const response = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "signup", email, password, fullName, mobileNumber, educationLevel, grade: Number(studentGrade), stream, subjects }) });
         const payload = (await response.json()) as { error?: string; user?: AuthResponseUser };
         if (!response.ok || !payload.user) throw new Error(payload.error ?? "Unable to create the account.");
         setAuthenticated(true);
@@ -492,7 +509,7 @@ export default function Home() {
       setContentBooks((payload.books ?? []).map((book, idx) => ({ ...book, price: `LKR ${book.price.toLocaleString("en-LK")}`, color: book.coverColor, imageUrl: book.imageUrl && book.imageUrl.trim() ? book.imageUrl : bookPlaceholders[idx % bookPlaceholders.length] })));
       setContentVideos((payload.videos ?? []).map((video, idx) => ({ ...video, color: "#d6e8e1", image: video.thumbnail && video.thumbnail.trim() ? video.thumbnail : videoPlaceholders[idx % videoPlaceholders.length] })));
       setContentExams((payload.exams ?? []).map(mapContentExam));
-      setWrittenPapers(payload.writtenPapers ?? []);
+      setAllWrittenPapers(payload.writtenPapers ?? []);
       setContentError("");
     }).catch((loadError: unknown) => {
       console.error("Published student content could not be loaded:", loadError);
@@ -979,7 +996,8 @@ if (!authenticated) {
                   {authView === "signup" && <label>Mobile number<input type="tel" value={mobileNumber} onChange={(event) => setMobileNumber(event.target.value)} placeholder="Enter your mobile number" autoComplete="tel" required /></label>}
                   <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder={portal === "admin" ? "admin@school.lk" : "you@example.com"} required /></label>
                   <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /></label>
-                  {authView === "signup" && <label>Education level<select value={educationLevel} onChange={(event) => { setEducationLevel(event.target.value); setStream(""); setSubjects([]); setSubjectError(false); }} required><option value="" disabled>Select your level</option><option>Grade 6–11</option><option>GCE Ordinary Level (O/L)</option><option>GCE Advanced Level (A/L)</option></select></label>}
+                  {authView === "signup" && <label>Education level<select value={educationLevel} onChange={(event) => { setEducationLevel(event.target.value); setStudentGrade(""); setStream(""); setSubjects([]); setSubjectError(false); }} required><option value="" disabled>Select your level</option><option>Grade 6–11</option><option>GCE Ordinary Level (O/L)</option><option>GCE Advanced Level (A/L)</option></select></label>}
+                  {authView === "signup" && academicLevel(educationLevel) && <label>Current grade<select value={studentGrade} onChange={(event) => setStudentGrade(event.target.value)} required><option value="" disabled>Select your grade</option>{gradesForEducationLevel(educationLevel).map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>}
                    {authView === "signup" && educationLevel === "GCE Advanced Level (A/L)" && (
                      <div className="academic-details">
                        <label>
@@ -1090,6 +1108,7 @@ if (!authenticated) {
       <section className="content-area">
         <header className="topbar"><div className="mobile-brand">E-mind<span>.</span></div><div className="breadcrumb">Workspace <span>/</span> {activeNav === "Overview" ? text.overview : activeNav === "My learning" ? text.learning : activeNav === "Examinations" ? text.examinations : activeNav === "Progress" ? text.progress : activeNav === "Book shop" ? text.shop : text.settings}</div><div className="top-actions"><div className="notification-wrap"><button className="icon-button" aria-label={text.notifications} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}>♧{unreadNotifications > 0 && <span className="notification-dot" />}</button>{notificationsOpen && <section className="notification-panel" role="dialog" aria-label={text.notifications}><div className="notification-head"><div><span className="eyebrow">YOUR UPDATES</span><h2>{text.notifications}</h2></div><button className="notification-close" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications">×</button></div><div className="notification-list"><article className={unreadNotifications > 0 ? "notification-item unread" : "notification-item"}><span className="notification-symbol">◷</span><div><strong>Physics exam reminder</strong><p>Your Unit 04 examination is on 24 Sep at 02:00 PM.</p><small>Today</small></div></article><article className={unreadNotifications > 1 ? "notification-item unread" : "notification-item"}><span className="notification-symbol">✦</span><div><strong>New learning insight</strong><p>You are close to mastering Physics. Keep practising vectors.</p><small>Yesterday</small></div></article></div><button className="mark-read-button" onClick={() => setUnreadNotifications(0)}>{unreadNotifications > 0 ? "Mark all as read" : "All caught up"}</button></section>}</div><button className="top-avatar" onClick={() => setProfileOpen(true)} aria-label="Open profile">{getInitials(profile.fullName)}</button></div></header>
         <div className="page-content">
+          {userRole === "student" && !academicProfileComplete && <p className="admin-upload-error" role="alert">Your academic profile is missing a valid grade or A/L stream. Ask an administrator to update it before exams and question papers can be displayed.</p>}
           {activeNav === "Overview" && <>
           <section className="welcome-row"><div><p className="eyebrow">THURSDAY, 10 SEPTEMBER 2026</p><h1>Good morning, {profile.fullName} <span>✦</span></h1><p className="subtitle">A little progress every day adds up to big results.</p></div><button className="outline-button" onClick={() => setProfileOpen(true)}>View profile <span>↗</span></button></section>
 

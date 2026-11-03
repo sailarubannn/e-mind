@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { parsePastedExamQuestions, type ParsedExamQuestion } from "@/lib/exam-question-text";
+import { gradeRange, type AcademicLevel } from "@/lib/academic-eligibility";
 
 type DifficultyMode = "easy" | "medium" | "hard" | "normal";
 
@@ -10,7 +11,7 @@ interface QuizQuestion extends ParsedExamQuestion {
 interface QuizFormData {
   title: string;
   subject: string;
-  educationLevel: string;
+  educationLevel: AcademicLevel;
   grade: string;
   stream: string;
   description: string;
@@ -52,8 +53,6 @@ const educationLevels = [
   { value: "O_LEVEL", label: "GCE Ordinary Level (O/L)" },
   { value: "A_LEVEL", label: "GCE Advanced Level (A/L)" },
 ];
-
-const grades = Array.from({ length: 13 }, (_, i) => i + 1).map((g) => ({ value: g.toString(), label: g === 13 ? "Grade 13" : `Grade ${g}` }));
 
 const streams = ["Biological Science", "Physical Science", "Commerce", "Technology", "Arts", "General"];
 
@@ -294,6 +293,7 @@ export default function QuizExamManager() {
 
   const questionsForMode = quizQuestions[activeDifficulty];
 
+  const selectedGradeRange = gradeRange(quizForm.educationLevel);
   return (
     <section className="admin-page-content">
       <div className="admin-page-heading">
@@ -378,20 +378,20 @@ export default function QuizExamManager() {
             </label>
             <label>
               Education Level
-              <select value={quizForm.educationLevel} onChange={(e) => setQuizForm({ ...quizForm, educationLevel: e.target.value })}>
+              <select required value={quizForm.educationLevel} onChange={(e) => setQuizForm({ ...quizForm, educationLevel: e.target.value as AcademicLevel, grade: "", stream: "" })}>
                 {educationLevels.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
               </select>
             </label>
             <label>
               Grade
-              <select value={quizForm.grade} onChange={(e) => setQuizForm({ ...quizForm, grade: e.target.value })}>
+              <select required value={quizForm.grade} onChange={(e) => setQuizForm({ ...quizForm, grade: e.target.value })}>
                 <option value="">Select Grade</option>
-                {grades.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+                {Array.from({ length: selectedGradeRange.max - selectedGradeRange.min + 1 }, (_, index) => selectedGradeRange.min + index).map((grade) => <option key={grade} value={String(grade)}>Grade {grade}</option>)}
               </select>
             </label>
             <label>
-              Stream (optional)
-              <select value={quizForm.stream} onChange={(e) => setQuizForm({ ...quizForm, stream: e.target.value })}>
+              Stream {quizForm.educationLevel === "A_LEVEL" ? "(required)" : "(optional)"}
+              <select required={quizForm.educationLevel === "A_LEVEL"} value={quizForm.stream} onChange={(e) => setQuizForm({ ...quizForm, stream: e.target.value })}>
                 <option value="">Select Stream</option>
                 {streams.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { OAuth2Client } from "google-auth-library";
 
 import { clearSession, createSession, getMongoUser, hashPassword, verifyPassword } from "@/lib/auth";
+import { academicLevel, isValidAcademicAudience } from "@/lib/academic-eligibility";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
       fullName?: string;
       mobileNumber?: string;
       educationLevel?: string;
+      grade?: number;
       stream?: string;
       subjects?: string[];
     };
@@ -69,6 +71,12 @@ export async function POST(request: Request) {
     if (body.action === "signup") {
       const mobileNumber = body.mobileNumber?.trim();
       if (!mobileNumber) return NextResponse.json({ error: "Mobile number is required." }, { status: 400 });
+      const educationLevel = body.educationLevel?.trim() ?? "";
+      const level = academicLevel(educationLevel);
+      const grade = Number(body.grade);
+      if (!level || !isValidAcademicAudience(level, grade, body.stream)) {
+        return NextResponse.json({ error: "Choose your education level and a valid grade. A/L students must also select their stream." }, { status: 400 });
+      }
 
       const existingUser = await prisma.user.findUnique({ where: { email } });
       if (existingUser) return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
@@ -80,7 +88,8 @@ export async function POST(request: Request) {
           fullName: body.fullName?.trim() || "Student",
           mobileNumber,
           role: "STUDENT",
-          educationLevel: body.educationLevel?.trim() || null,
+          educationLevel,
+          grade,
           stream: body.stream?.trim() || null,
           subjects: Array.isArray(body.subjects) ? body.subjects.filter((subject): subject is string => typeof subject === "string") : [],
         },

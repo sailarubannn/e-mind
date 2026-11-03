@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getMongoUser } from "@/lib/auth";
+import { matchesAcademicAudience } from "@/lib/academic-eligibility";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -12,8 +13,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const user = await getMongoUser();
   if (!user || user.role !== "student") return NextResponse.json({ error: "Sign in as a student to take this paper." }, { status: 401 });
   const { id: paperId } = await context.params;
-  const paper = await prisma.writtenPaper.findFirst({ where: { id: paperId, published: true }, select: { id: true, durationMins: true } });
+  const paper = await prisma.writtenPaper.findFirst({ where: { id: paperId, published: true }, select: { id: true, durationMins: true, educationLevel: true, grade: true, stream: true } });
   if (!paper) return NextResponse.json({ error: "This question paper is not available." }, { status: 404 });
+  if (!matchesAcademicAudience(user, paper)) return NextResponse.json({ error: "This paper is not available for your grade or stream." }, { status: 403 });
 
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("multipart/form-data")) {

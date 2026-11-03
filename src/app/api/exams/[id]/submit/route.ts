@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getMongoUser } from "@/lib/auth";
+import { matchesAcademicAudience } from "@/lib/academic-eligibility";
 import { isValidOptionAnswer, resolveOptionAnswer } from "@/lib/exam-answers";
 import { prisma } from "@/lib/prisma";
 
@@ -62,6 +63,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     include: { questions: { orderBy: { id: "asc" } } },
   });
   if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
+  if (!matchesAcademicAudience(user, exam)) return NextResponse.json({ error: "This exam is not available for your grade or stream." }, { status: 403 });
 
   const totalMarks = exam.questions.reduce((total, question) => total + question.marks, 0);
   const invalidAnswerKey = exam.questions.some((question) => {
