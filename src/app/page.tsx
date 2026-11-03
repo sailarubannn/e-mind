@@ -621,7 +621,7 @@ if (!authenticated) {
             <div className="landing-nav-links">
               <a href="#hero-title" className="landing-nav-link" onClick={(e) => { e.preventDefault(); document.getElementById('hero-title')?.scrollIntoView({ behavior: 'smooth' }); }}>Home</a>
               <a href="#features-title" className="landing-nav-link" onClick={(e) => { e.preventDefault(); document.getElementById('features-title')?.scrollIntoView({ behavior: 'smooth' }); }}>Resources</a>
-              <a href="#" className="landing-nav-link">Contact Us</a>
+              <a href="mailto:edusmart029@gmail.com" className="landing-nav-link">Contact Us</a>
             </div>
             <div className="landing-nav-actions">
               <button className="landing-btn-secondary" onClick={() => { setPortal("student"); setAuthView("login"); setShowAuthPanel(true); }}>Login</button>
@@ -974,7 +974,7 @@ if (!authenticated) {
               <a href="#" className="landing-footer-link">About Us</a>
               <a href="#" className="landing-footer-link">Privacy Policy</a>
               <a href="#" className="landing-footer-link">Terms of Service</a>
-              <a href="#" className="landing-footer-link">Contact</a>
+              <a href="mailto:edusmart029@gmail.com" className="landing-footer-link">Contact</a>
             </div>
             <p>© 2024 E-mind Sri Lanka. All rights reserved.</p>
             <p style={{ marginTop: '8px', fontSize: '12px' }}>E-mind Sri Lanka · English · Sinhala · Tamil</p>
