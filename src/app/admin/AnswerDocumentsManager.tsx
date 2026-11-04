@@ -39,8 +39,29 @@ function flattenDocuments(papers: WrittenPaper[]) {
 
 export default function AnswerDocumentsManager() {
   const [documents, setDocuments] = useState<AnswerDocument[]>([]);
+  const [selectedPaperId, setSelectedPaperId] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const paperOptions = [...new Map(documents.map((document) => [
+    document.paperId,
+    { id: document.paperId, title: document.paperTitle, subject: document.subject },
+  ])).values()].sort((left, right) => left.title.localeCompare(right.title));
+  const filteredDocuments = selectedPaperId === "all"
+    ? documents
+    : documents.filter((document) => document.paperId === selectedPaperId);
+  const groupedDocuments = [...filteredDocuments.reduce((groups, document) => {
+    const group = groups.get(document.paperId) ?? [];
+    group.push(document);
+    groups.set(document.paperId, group);
+    return groups;
+  }, new Map<string, AnswerDocument[]>()).entries()]
+    .map(([paperId, submissions]) => ({
+      paperId,
+      paperTitle: submissions[0].paperTitle,
+      subject: submissions[0].subject,
+      submissions,
+    }))
+    .sort((left, right) => left.paperTitle.localeCompare(right.paperTitle));
 
   async function loadDocuments() {
     setLoading(true);
@@ -91,22 +112,38 @@ export default function AnswerDocumentsManager() {
       : documents.length === 0
         ? <p className="admin-empty">No student answer documents have been submitted yet.</p>
         : <div className="answer-document-list">
-          <div className="admin-record-list-head"><strong>{documents.length} submitted answer document{documents.length === 1 ? "" : "s"}</strong></div>
-          {documents.map((document) => <article className="answer-document-card" key={document.id}>
-            <div className="answer-document-details">
-              <span className="subject-tag">{document.subject}</span>
-              <h3>{document.student?.fullName ?? "Student account unavailable"}</h3>
-              <p>{document.student?.email ?? "Email unavailable"} · {document.student?.mobileNumber || "Mobile not provided"}</p>
-              <dl>
-                <div><dt>Exam paper</dt><dd>{document.paperTitle}</dd></div>
-                <div><dt>Answer document</dt><dd>{document.fileName ?? "Answer paper"}</dd></div>
-                <div><dt>Submitted</dt><dd>{document.submittedAt ? new Date(document.submittedAt).toLocaleString() : "Submission time unavailable"}</dd></div>
-              </dl>
+          <div className="answer-document-controls">
+            <label htmlFor="answer-document-paper-filter">Filter by exam paper</label>
+            <select id="answer-document-paper-filter" value={selectedPaperId} onChange={(event) => setSelectedPaperId(event.target.value)}>
+              <option value="all">All exam papers ({documents.length})</option>
+              {paperOptions.map((paper) => {
+                const count = documents.filter((document) => document.paperId === paper.id).length;
+                return <option key={paper.id} value={paper.id}>{paper.title} · {paper.subject} ({count})</option>;
+              })}
+            </select>
+            <strong>{filteredDocuments.length} answer document{filteredDocuments.length === 1 ? "" : "s"}</strong>
+          </div>
+          {groupedDocuments.map((group) => <details className="answer-document-group" key={group.paperId}>
+            <summary>
+              <span><strong>{group.paperTitle}</strong><small>{group.subject}</small></span>
+              <span className="answer-document-group-count">{group.submissions.length} document{group.submissions.length === 1 ? "" : "s"}</span>
+            </summary>
+            <div className="answer-document-group-list">
+              {group.submissions.map((document) => <article className="answer-document-card" key={document.id}>
+                <div className="answer-document-details">
+                  <h3>{document.student?.fullName ?? "Student account unavailable"}</h3>
+                  <p>{document.student?.email ?? "Email unavailable"} · {document.student?.mobileNumber || "Mobile not provided"}</p>
+                  <dl>
+                    <div><dt>Answer document</dt><dd>{document.fileName ?? "Answer paper"}</dd></div>
+                    <div><dt>Submitted</dt><dd>{document.submittedAt ? new Date(document.submittedAt).toLocaleString() : "Submission time unavailable"}</dd></div>
+                  </dl>
+                </div>
+                <a className="answer-document-download" href={`/api/admin/written-papers/${document.paperId}/submissions/${document.id}`}>
+                  Download answer document <span aria-hidden="true">↓</span>
+                </a>
+              </article>)}
             </div>
-            <a className="answer-document-download" href={`/api/admin/written-papers/${document.paperId}/submissions/${document.id}`}>
-              Download answer document <span aria-hidden="true">↓</span>
-            </a>
-          </article>)}
+          </details>)}
         </div>}
   </section>;
 }
