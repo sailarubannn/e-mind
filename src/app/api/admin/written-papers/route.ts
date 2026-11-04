@@ -16,7 +16,7 @@ export async function GET() {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Administrator access is required." }, { status: 403 });
   const papers = await prisma.writtenPaper.findMany({
     orderBy: { createdAt: "desc" },
-    select: { id: true, title: true, subject: true, educationLevel: true, grade: true, stream: true, fileName: true, durationMins: true, published: true, answerSchemeFileName: true, answerSchemePublished: true, createdAt: true },
+    select: { id: true, title: true, subject: true, educationLevel: true, grade: true, stream: true, fileName: true, durationMins: true, startsAt: true, endsAt: true, published: true, answerSchemeFileName: true, answerSchemePublished: true, createdAt: true },
   });
   const attempts = await prisma.writtenPaperAttempt.findMany({ where: { paperId: { in: papers.map((paper) => paper.id) }, submittedAt: { not: null } }, select: { id: true, paperId: true, userId: true, fileName: true, submittedAt: true }, orderBy: { submittedAt: "desc" } });
   const users = await prisma.user.findMany({ where: { id: { in: [...new Set(attempts.map((attempt) => attempt.userId))] } }, select: { id: true, fullName: true, email: true, mobileNumber: true } });
@@ -52,8 +52,13 @@ export async function POST(request: Request) {
   const streamValue = String(form.get("stream") ?? "").trim();
   const published = form.get("published") === "true";
   const durationMins = Number(form.get("durationMins"));
+  const startsAt = new Date(String(form.get("startsAt") ?? ""));
+  const endsAt = new Date(String(form.get("endsAt") ?? ""));
   if (!title || !subject || !Number.isInteger(durationMins) || durationMins < 1 || durationMins > 600) {
     return NextResponse.json({ error: "Add a title, subject, and a duration from 1 to 600 minutes." }, { status: 400 });
+  }
+  if (!Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime()) || endsAt <= startsAt) {
+    return NextResponse.json({ error: "Choose a valid exam window with an end date and time after the start." }, { status: 400 });
   }
   const grade = gradeValue ? Number(gradeValue) : null;
   if (!educationLevel || grade === null || !isValidAcademicAudience(educationLevel, grade, streamValue)) {
@@ -62,11 +67,11 @@ export async function POST(request: Request) {
 
   const paper = await prisma.writtenPaper.create({
     data: {
-      title, subject, educationLevel, grade, stream: streamValue || null, durationMins,
+      title, subject, educationLevel, grade, stream: streamValue || null, durationMins, startsAt, endsAt,
       fileName: file.name, mimeType: file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       document: Buffer.from(await file.arrayBuffer()), published,
     },
-    select: { id: true, title: true, subject: true, educationLevel: true, grade: true, stream: true, fileName: true, durationMins: true, published: true, createdAt: true },
+    select: { id: true, title: true, subject: true, educationLevel: true, grade: true, stream: true, fileName: true, durationMins: true, startsAt: true, endsAt: true, published: true, createdAt: true },
   });
   return NextResponse.json({ item: paper }, { status: 201 });
 }

@@ -267,6 +267,8 @@ model WrittenPaper {
   stream                String?
   fileName              String
   durationMins          Int?           @default(60)
+  startsAt              DateTime?
+  endsAt                DateTime?
   mimeType              String
   document              Bytes
   published             Boolean        @default(false)

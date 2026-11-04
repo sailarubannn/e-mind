@@ -46,7 +46,7 @@ const streamSubjects: Record<string, string[]> = {
 
 type BookCard = { id: string; title: string; author: string; subject: string; level: string; price: string; color: string; imageUrl: string };
 type ExtractedExamQuestion = { prompt: string; options: string[]; correctAnswer: string | null; imageUrl?: string | null; optionImages?: (string | null)[] };
-type PublishedWrittenPaper = { id: string; title: string; subject: string; educationLevel: string; grade: number | null; stream: string | null; fileName: string; durationMins: number; answerSchemePublished: boolean };
+type PublishedWrittenPaper = { id: string; title: string; subject: string; educationLevel: string; grade: number | null; stream: string | null; fileName: string; durationMins: number; startsAt: string | null; endsAt: string | null; answerSchemePublished: boolean };
 type LearningShowcaseCard = { title: string; description: string; summary: string; image: string; icon: string; destination: string | null; actionLabel: string };
 
 const assistantReplies: Record<string, string> = {
@@ -282,7 +282,8 @@ export default function Home() {
   const questions = activeExam?.questions ?? [];
   const academicProfile = { educationLevel: profile.educationLevel === "Not provided" ? null : profile.educationLevel, grade: profile.grade, stream: profile.stream === "Not provided" ? null : profile.stream };
   const exams = userRole === "student" ? availableExams.filter((exam) => matchesAcademicAudience(academicProfile, exam)) : availableExams;
-  const writtenPapers = userRole === "student" ? allWrittenPapers.filter((paper) => matchesAcademicAudience(academicProfile, paper)) : allWrittenPapers;
+  const availableWrittenPapers = allWrittenPapers.filter((paper) => !paper.endsAt || Date.parse(paper.endsAt) > scheduleNow);
+  const writtenPapers = userRole === "student" ? availableWrittenPapers.filter((paper) => matchesAcademicAudience(academicProfile, paper)) : availableWrittenPapers;
   const academicProfileComplete = isAcademicProfileComplete(academicProfile);
   const quizExams = exams.filter((exam) => exam.isQuiz);
   const scheduledExams = exams.filter((exam) => !exam.isQuiz);
@@ -598,8 +599,10 @@ export default function Home() {
 
   useEffect(() => {
     const now = Date.now();
-    const nextTransition = contentExams
-      .flatMap((exam) => [Date.parse(exam.startsAt), Date.parse(exam.endsAt)])
+    const nextTransition = [
+      ...contentExams.flatMap((exam) => [Date.parse(exam.startsAt), Date.parse(exam.endsAt)]),
+      ...allWrittenPapers.flatMap((paper) => [paper.startsAt ? Date.parse(paper.startsAt) : Number.NaN, paper.endsAt ? Date.parse(paper.endsAt) : Number.NaN]),
+    ]
       .filter((timestamp) => Number.isFinite(timestamp) && timestamp > now)
       .sort((left, right) => left - right)[0];
     if (nextTransition === undefined) return;
@@ -608,7 +611,7 @@ export default function Home() {
       Math.min(nextTransition - now, 2_147_000_000),
     );
     return () => window.clearTimeout(timeout);
-  }, [contentExams, scheduleNow]);
+  }, [allWrittenPapers, contentExams, scheduleNow]);
 
   useEffect(() => {
     if (attemptDeadline === null || autoSubmitStarted.current) return;
@@ -1277,7 +1280,7 @@ if (!authenticated) {
               </article>)}</div>}
           </section>}
 
-          {activeNav === "Examinations" && <section className="nav-page written-paper-student-list"><div className="section-heading"><div><p className="eyebrow">ESSAY AND STRUCTURED PRACTICE</p><h2>Question papers</h2><p className="subtitle">Start the exam to begin its timer, then upload your scanned answer paper before time runs out.</p></div></div>{writtenPapers.length === 0 ? <p className="admin-empty">No essay or structured question papers have been published yet.</p> : <div className="written-paper-student-grid">{writtenPapers.map((paper) => <article className="written-paper-student-card" key={paper.id}><div className="written-paper-card-top"><div><span className="subject-tag">{paper.subject} &middot; {paper.educationLevel === "GRADE" ? `Grade${paper.grade ? ` ${paper.grade}` : ""}` : paper.educationLevel === "A_LEVEL" ? "A Level" : "O Level"}{paper.stream ? ` &middot; ${paper.stream}` : ""}</span><h3>{paper.title}</h3><p>{paper.fileName}{paper.fileName.toLowerCase().endsWith(".docx") ? " · Download to open this Word document." : ""}</p></div><a className="primary-button" href={`/api/written-papers/${paper.id}/download`}>Download question paper</a></div>{paper.answerSchemePublished && <p><a className="secondary-button" href={`/api/written-papers/${paper.id}/answer-scheme`}>Download answer scheme</a></p>}{paper.fileName.toLowerCase().endsWith(".pdf") && <iframe className="written-paper-preview" src={`/api/written-papers/${paper.id}/download?inline=1`} title={`${paper.title} question paper`} />}<WrittenPaperAttempt paper={paper} /></article>)}</div>}</section>}
+          {activeNav === "Examinations" && <section className="nav-page written-paper-student-list"><div className="section-heading"><div><p className="eyebrow">ESSAY AND STRUCTURED PRACTICE</p><h2>Question papers</h2><p className="subtitle">Start at the scheduled time. Your answer paper must be submitted before the earlier of the exam end time or your duration timer.</p></div></div>{writtenPapers.length === 0 ? <p className="admin-empty">No essay or structured question papers have been published yet.</p> : <div className="written-paper-student-grid">{writtenPapers.map((paper) => { const notStarted = paper.startsAt !== null && scheduleNow < Date.parse(paper.startsAt); return <article className="written-paper-student-card" key={paper.id}><div className="written-paper-card-top"><div><span className="subject-tag">{paper.subject} &middot; {paper.educationLevel === "GRADE" ? `Grade${paper.grade ? ` ${paper.grade}` : ""}` : paper.educationLevel === "A_LEVEL" ? "A Level" : "O Level"}{paper.stream ? ` &middot; ${paper.stream}` : ""}</span><h3>{paper.title}</h3><p>{paper.fileName}{paper.fileName.toLowerCase().endsWith(".docx") ? " · Download to open this Word document." : ""}</p>{paper.startsAt && <p>{notStarted ? "Exam starts at " : "Exam started at "}{new Date(paper.startsAt).toLocaleString()}{paper.endsAt ? ` · Ends at ${new Date(paper.endsAt).toLocaleString()}` : ""}</p>}</div>{notStarted ? <button className="primary-button" disabled>Available at exam start time</button> : <a className="primary-button" href={`/api/written-papers/${paper.id}/download`}>Download question paper</a>}</div>{paper.answerSchemePublished && <p><a className="secondary-button" href={`/api/written-papers/${paper.id}/answer-scheme`}>Download answer scheme</a></p>}{!notStarted && paper.fileName.toLowerCase().endsWith(".pdf") && <iframe className="written-paper-preview" src={`/api/written-papers/${paper.id}/download?inline=1`} title={`${paper.title} question paper`} />}<WrittenPaperAttempt paper={paper} now={scheduleNow} /></article>; })}</div>}</section>}
           {activeNav === "Progress" && <StudentProgress refreshKey={progressRefreshKey} />}
 
           {activeNav === "Book shop" && <section className="nav-page shop-page"><div className="section-heading"><div><p className="eyebrow">STUDY MATERIALS FOR YOUR JOURNEY</p><h1>Book shop</h1><p className="subtitle">Get trusted revision guides and practice papers delivered to you.</p></div><button className="basket-button" onClick={() => setBasket([])} aria-label="Clear basket">Basket <span>{basket.length}</span></button></div><div className="book-grid">{contentBooks.map((book) => { const inBasket = basket.includes(book.title); return <article className={`book-card ${book.color}`} key={book.id}><div className="book-cover" style={book.imageUrl ? { backgroundImage: `url(${book.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}><span>{book.level}</span><strong>{book.subject}</strong><i>E-mind<br />Study Series</i></div><div className="book-copy"><div className="book-meta"><span>{book.subject}</span><span>{book.level}</span></div><h2>{book.title}</h2><p>by {book.author}</p><div className="book-purchase"><strong>{book.price}</strong><button className={inBasket ? "added-button" : "primary-button"} onClick={() => setBasket((current) => inBasket ? current.filter((title) => title !== book.title) : [...current, book.title])}>{inBasket ? "Added ✓" : "Add to basket"}</button></div></div></article>; })}</div>{basket.length > 0 && <div className="basket-bar"><div><strong>{basket.length} {basket.length === 1 ? "book" : "books"} in your basket</strong><span>Online checkout is not available yet. No order has been placed.</span></div><button className="primary-button" disabled>Checkout unavailable</button></div>}</section>}

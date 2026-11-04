@@ -41,7 +41,11 @@ export async function GET() {
         },
       },
     }),
-    prisma.writtenPaper.findMany({ where: { published: true }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, subject: true, educationLevel: true, grade: true, stream: true, fileName: true, durationMins: true, answerSchemePublished: true, createdAt: true } }),
+    prisma.writtenPaper.findMany({
+      where: { published: true, OR: [{ endsAt: null }, { endsAt: { gt: requestTime } }] },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, title: true, subject: true, educationLevel: true, grade: true, stream: true, fileName: true, durationMins: true, startsAt: true, endsAt: true, answerSchemePublished: true, createdAt: true },
+    }),
   ]);
   const studentAttempts = user?.role === "student"
     ? await prisma.examAttempt.findMany({

@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-type Props = { paper: { id: string; title: string; fileName: string; durationMins: number } };
+type Props = { paper: { id: string; title: string; fileName: string; durationMins: number; startsAt: string | null; endsAt: string | null }; now: number };
 
-export default function WrittenPaperAttempt({ paper }: Props) {
+export default function WrittenPaperAttempt({ paper, now }: Props) {
   const [deadline, setDeadline] = useState<number | null>(null);
   const [seconds, setSeconds] = useState(0);
   const [file, setFile] = useState<File | null>(null);
@@ -25,8 +25,13 @@ export default function WrittenPaperAttempt({ paper }: Props) {
     setLoading(true); setError(""); setMessage("");
     try {
       const response = await fetch(`/api/written-papers/${paper.id}/attempt`, { method: "POST" });
-      const result = await response.json() as { expiresAt?: string; submittedAt?: string | null; fileName?: string | null; error?: string };
-      if (!response.ok || !result.expiresAt) throw new Error(result.error ?? "Could not start this exam.");
+      const result = await response.json() as { expiresAt?: string; startsAt?: string; submittedAt?: string | null; fileName?: string | null; error?: string };
+      if (!response.ok || !result.expiresAt) {
+        const startTime = result.startsAt ? new Date(result.startsAt) : null;
+        throw new Error(startTime && Number.isFinite(startTime.getTime())
+          ? `This exam starts at ${startTime.toLocaleString()}.`
+          : result.error ?? "Could not start this exam.");
+      }
       const parsed = Date.parse(result.expiresAt);
       if (!Number.isFinite(parsed)) throw new Error("The exam returned an invalid deadline.");
       setDeadline(parsed);
@@ -53,9 +58,10 @@ export default function WrittenPaperAttempt({ paper }: Props) {
   const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   const started = deadline !== null;
   const expired = started && seconds <= 0 && !submittedFile;
+  const notStarted = paper.startsAt !== null && now < Date.parse(paper.startsAt);
   return <section className="written-attempt-portal" aria-label={`${paper.title} answer portal`}>
-    <div className="written-attempt-heading"><div><strong>Exam time: {paper.durationMins} minutes</strong><small>{submittedFile ? `Submitted: ${submittedFile}` : started ? expired ? "Time is up. The upload portal is closed." : "Upload your scanned answer paper before the timer ends." : "Start the exam to begin your timer and open the answer upload portal."}</small></div>
-      {!started && <button className="primary-button" onClick={() => void startAttempt()} disabled={loading}>Start exam</button>}
+    <div className="written-attempt-heading"><div><strong>Exam time: {paper.durationMins} minutes</strong><small>{submittedFile ? `Submitted: ${submittedFile}` : started ? expired ? "Time is up. The upload portal is closed." : "Upload your scanned answer paper before the timer or scheduled end time." : notStarted ? `Exam starts at ${new Date(paper.startsAt!).toLocaleString()}.` : "Start the exam to begin your timer and open the answer upload portal."}</small></div>
+      {!started && <button className="primary-button" onClick={() => void startAttempt()} disabled={loading || notStarted}>{notStarted ? "Not started" : "Start exam"}</button>}
     </div>
     {started && <div className={`written-attempt-timer${seconds < 60 ? " urgent" : ""}`}><span>TIME REMAINING</span><strong>{time}</strong>{!submittedFile && !expired && <button className="secondary-button" onClick={() => void startAttempt()} disabled={loading}>Refresh status</button>}</div>}
     {started && !submittedFile && !expired && <form className="written-answer-upload" onSubmit={(event) => void submitAnswer(event)}><label>Scanned answer paper (PDF or image)<input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setError(""); }} /><small>One final submission, up to 15 MB. Make sure all pages are clear and included.</small></label><button className="primary-button" type="submit" disabled={loading || !file}>{loading ? "Submitting…" : "Submit answer paper"}</button></form>}

@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { gradeRange, type AcademicLevel } from "@/lib/academic-eligibility";
 
 type Submission = { id: string; fileName: string | null; submittedAt: string | null; student?: { fullName: string; email: string; mobileNumber: string | null } };
-type WrittenPaper = { id: string; title: string; subject: string; educationLevel: string; grade: number | null; stream: string | null; fileName: string; durationMins: number; published: boolean; answerSchemeFileName: string | null; answerSchemePublished: boolean; createdAt: string; submissions: Submission[] };
+type WrittenPaper = { id: string; title: string; subject: string; educationLevel: string; grade: number | null; stream: string | null; fileName: string; durationMins: number; startsAt: string | null; endsAt: string | null; published: boolean; answerSchemeFileName: string | null; answerSchemePublished: boolean; createdAt: string; submissions: Submission[] };
 
 const levelLabels: Record<string, string> = { GRADE: "Grade 6-11", O_LEVEL: "O Level", A_LEVEL: "A Level" };
 
@@ -16,6 +16,8 @@ export default function WrittenPaperManager() {
   const [grade, setGrade] = useState("");
   const [stream, setStream] = useState("");
   const [durationMins, setDurationMins] = useState("60");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [answerSchemeFiles, setAnswerSchemeFiles] = useState<Record<string, File | null>>({});
   const [answerSchemeLoadingId, setAnswerSchemeLoadingId] = useState<string | null>(null);
@@ -53,17 +55,22 @@ export default function WrittenPaperManager() {
     event.preventDefault();
     if (!file) { setError("Choose the PDF or DOCX paper you want students to download."); return; }
     if (file.size > 10 * 1024 * 1024) { setError("The paper must be smaller than 10 MB."); return; }
+    if (!startsAt || !endsAt || !Number.isFinite(new Date(startsAt).getTime()) || !Number.isFinite(new Date(endsAt).getTime()) || new Date(endsAt) <= new Date(startsAt)) {
+      setError("Choose a valid exam end date and time after the start date and time.");
+      return;
+    }
     setLoading(true); setError(""); setStatus("");
     const form = new FormData();
     form.set("file", file); form.set("title", title); form.set("subject", subject);
     form.set("educationLevel", educationLevel); form.set("grade", grade); form.set("stream", stream);
     form.set("durationMins", durationMins); form.set("published", String(published));
+    form.set("startsAt", new Date(startsAt).toISOString()); form.set("endsAt", new Date(endsAt).toISOString());
     try {
       const response = await fetch("/api/admin/written-papers", { method: "POST", body: form });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "Could not save the written paper.");
       setStatus(published ? "Paper published and available for students." : "Paper saved as a draft.");
-      setTitle(""); setSubject(""); setGrade(""); setStream(""); setDurationMins("60"); setFile(null);
+      setTitle(""); setSubject(""); setGrade(""); setStream(""); setDurationMins("60"); setStartsAt(""); setEndsAt(""); setFile(null);
       const picker = document.getElementById("written-paper-file") as HTMLInputElement | null;
       if (picker) picker.value = "";
       await loadPapers();
@@ -163,7 +170,9 @@ export default function WrittenPaperManager() {
       <div className="admin-editor-fields">
         <label>Paper title<input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Grade 11 Science Structured Paper" /></label>
         <label>Subject<input required value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="e.g. Biology" /></label>
-        <label>Exam duration (minutes)<input type="number" required min="1" max="600" value={durationMins} onChange={(event) => setDurationMins(event.target.value)} /><small>Students receive this time after they start.</small></label>
+        <label>Start date and time<input type="datetime-local" required value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label>
+        <label>End date and time<input type="datetime-local" required min={startsAt || undefined} value={endsAt} onChange={(event) => setEndsAt(event.target.value)} /><small>Student uploads close at this time, even if their duration timer has time left.</small></label>
+        <label>Exam duration (minutes)<input type="number" required min="1" max="600" value={durationMins} onChange={(event) => setDurationMins(event.target.value)} /><small>Students receive this time after they start, up to the scheduled end.</small></label>
         <label>Education level<select value={educationLevel} onChange={(event) => { setEducationLevel(event.target.value as AcademicLevel); setGrade(""); setStream(""); }}><option value="GRADE">Grade 6-11</option><option value="O_LEVEL">O Level</option><option value="A_LEVEL">A Level</option></select></label>
         <label>Grade<input type="number" required min={gradeLimits.min} max={gradeLimits.max} value={grade} onChange={(event) => setGrade(event.target.value)} placeholder={`Grade ${gradeLimits.min}-${gradeLimits.max}`} /></label>
         {educationLevel === "A_LEVEL" && <label>Stream<input required value={stream} onChange={(event) => setStream(event.target.value)} placeholder="e.g. Biological Science" /></label>}
@@ -176,7 +185,7 @@ export default function WrittenPaperManager() {
         <article className="admin-record written-paper-record" key={paper.id}>
           <div>
             <strong>{paper.title} - {paper.subject}</strong>
-            <small>{paper.published ? "Published" : "Draft"} - {paper.durationMins} minutes - {levelLabels[paper.educationLevel] ?? paper.educationLevel}{paper.grade ? ` ${paper.grade}` : ""}{paper.stream ? ` - ${paper.stream}` : ""} - {paper.fileName}</small>
+            <small>{paper.published ? "Published" : "Draft"} - {paper.durationMins} minutes - {paper.startsAt ? new Date(paper.startsAt).toLocaleString() : "No start set"} to {paper.endsAt ? new Date(paper.endsAt).toLocaleString() : "No end set"} - {levelLabels[paper.educationLevel] ?? paper.educationLevel}{paper.grade ? ` ${paper.grade}` : ""}{paper.stream ? ` - ${paper.stream}` : ""} - {paper.fileName}</small>
             <details>
               <summary>Update student audience</summary>
               <form className="admin-editor" onSubmit={(event) => void saveAudience(event, paper)}>
