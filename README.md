@@ -41,6 +41,7 @@ MongoDB Atlas must be reachable from Vercel, and MongoDB transaction support req
 - `src/app/globals.css` contains the responsive visual system and mobile layout rules.
 - Exam and quiz availability windows are stored as instants in MongoDB. The API prevents attempts before the scheduled start, caps attempt timers at the scheduled end, and rejects submissions after the end.
 - Essay and structured papers also require an admin-set start and end time. Student answer uploads close at the earlier of the scheduled end and the duration-based attempt deadline; expired papers are removed from student listings.
+- Admins review student essay and structured-paper uploads from the dedicated Answer documents page, which lists student and paper details with a direct download action.
 - Authentication uses MongoDB-backed hashed credentials, signed HTTP-only sessions, role checks, and protected admin access.
 - Google sign-in uses Google Identity Services in the browser and server-side ID-token verification. Set both Google client ID variables from `.env.example` before enabling it.
 - Recommendation logic should be an injectable service: profile signals -> candidate resources -> ranking -> explanation. YouTube ingestion belongs behind a server-side API route so keys never reach the browser.
