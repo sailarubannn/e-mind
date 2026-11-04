@@ -37,9 +37,9 @@ MongoDB Atlas must be reachable from Vercel, and MongoDB transaction support req
 
 ## Product architecture
 
-- `src/app/page.tsx` currently owns the interactive student workspace prototype and exam attempt state.
+- `src/app/page.tsx` owns the interactive student workspace and exam attempt UI. Published exam schedules are displayed in the student's local time, and expired exams are removed from the student-facing lists.
 - `src/app/globals.css` contains the responsive visual system and mobile layout rules.
-- The next production slice should move exam state into server actions/API routes backed by MongoDB and Prisma, with server-side deadline validation on every save and submit request.
+- Exam and quiz availability windows are stored as instants in MongoDB. The API prevents attempts before the scheduled start, caps attempt timers at the scheduled end, and rejects submissions after the end.
 - Authentication uses MongoDB-backed hashed credentials, signed HTTP-only sessions, role checks, and protected admin access.
 - Google sign-in uses Google Identity Services in the browser and server-side ID-token verification. Set both Google client ID variables from `.env.example` before enabling it.
 - Recommendation logic should be an injectable service: profile signals -> candidate resources -> ranking -> explanation. YouTube ingestion belongs behind a server-side API route so keys never reach the browser.

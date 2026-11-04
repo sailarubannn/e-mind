@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import ExamQuestionEditor from "./admin/ExamQuestionEditor";
 import WrittenPaperAttempt from "./WrittenPaperAttempt";
@@ -70,8 +70,8 @@ type ExamQuestion = { id: string; prompt: string; imageUrl?: string | null; opti
 type ExamReviewQuestion = { questionId: string; prompt: string; imageUrl?: string | null; optionImages?: (string | null)[]; options: string[]; selectedAnswer: string | null; correctAnswer: string; isCorrect: boolean };
 type ExamResult = { obtainedMarks: number; totalMarks: number; percentage: number; passed: boolean; review: ExamReviewQuestion[] };
 type StudentAttemptStatus = "IN_PROGRESS" | "SUBMITTED" | "EXPIRED";
-type ContentExam = { id: string; title: string; startsAt: string; durationMins: number; educationLevel: string; grade: number | null; stream: string | null; isQuiz?: boolean; canRetake?: boolean; studentAttemptStatus?: StudentAttemptStatus | null; subject: { name: string }; questions: ExamQuestion[] };
-type PublishedExam = { id: string; title: string; subject: string; startsAt: string; date: string; time: string; duration: string; durationMins: number; educationLevel: string; grade: number | null; stream: string | null; tone: string; questions: ExamQuestion[]; fileName: string; isQuiz: boolean; canRetake: boolean; studentAttemptStatus?: StudentAttemptStatus | null };
+type ContentExam = { id: string; title: string; startsAt: string; endsAt: string; durationMins: number; educationLevel: string; grade: number | null; stream: string | null; isQuiz?: boolean; canRetake?: boolean; studentAttemptStatus?: StudentAttemptStatus | null; subject: { name: string }; questions: ExamQuestion[] };
+type PublishedExam = { id: string; title: string; subject: string; startsAt: string; endsAt: string; date: string; time: string; duration: string; durationMins: number; educationLevel: string; grade: number | null; stream: string | null; tone: string; questions: ExamQuestion[]; fileName: string; isQuiz: boolean; canRetake: boolean; studentAttemptStatus?: StudentAttemptStatus | null };
 
 function mapContentExam(exam: ContentExam): PublishedExam {
   const start = new Date(exam.startsAt);
@@ -80,6 +80,7 @@ function mapContentExam(exam: ContentExam): PublishedExam {
     title: exam.title,
     subject: exam.subject.name,
     startsAt: exam.startsAt,
+    endsAt: exam.endsAt,
     date: start.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
     time: start.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
     duration: `${exam.durationMins} min`,
@@ -104,7 +105,9 @@ function ExamUploadForm() {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
-  const [date, setDate] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [grade, setGrade] = useState("");
   const [duration, setDuration] = useState("60 min");
   const [questions, setQuestions] = useState<ExtractedExamQuestion[]>([]);
   const [status, setStatus] = useState("");
@@ -130,11 +133,16 @@ function ExamUploadForm() {
 
   const publishExam = async () => {
     const incompleteQuestion = questions.some((question) => { const options = question.options.map((option) => option.trim()); const firstEmpty = options.indexOf(""); return !question.prompt.trim() || options.filter(Boolean).length < 2 || (firstEmpty >= 0 && options.slice(firstEmpty).some(Boolean)) || !question.correctAnswer || !options[question.correctAnswer.charCodeAt(0) - 65]; });
-    if (!title || !subject || !date || questions.length === 0 || incompleteQuestion) { setError("Add the exam details and complete every question with at least two consecutive options and a correct answer before publishing."); return; }
+    if (!title || !subject || !startsAt || !endsAt || !grade || questions.length === 0 || incompleteQuestion) { setError("Add the exam details and complete every question with at least two consecutive options and a correct answer before publishing."); return; }
+    const startDate = new Date(startsAt);
+    const endDate = new Date(endsAt);
+    if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate <= startDate) {
+      setError("Choose a valid exam end date and time after the start date and time.");
+      return;
+    }
     setUploading(true); setError("");
     try {
-      const startsAt = `${date}T09:00:00`;
-      const response = await fetch("/api/admin/exams", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, subject, educationLevel: "GRADE", durationMins: Number.parseInt(duration, 10), totalMarks: questions.length, startsAt, endsAt: `${date}T23:59:00`, published: true, questions }) });
+      const response = await fetch("/api/admin/exams", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, subject, educationLevel: "GRADE", grade: Number(grade), durationMins: Number.parseInt(duration, 10), totalMarks: questions.length, startsAt: startDate.toISOString(), endsAt: endDate.toISOString(), published: true, questions }) });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "The exam could not be published.");
       setStatus("Exam published successfully and is now available to students.");
@@ -142,7 +150,7 @@ function ExamUploadForm() {
     finally { setUploading(false); }
   };
 
-  return <section className="admin-form-page"><div className="admin-page-heading"><div><p className="eyebrow">ADMIN ONLY · PDF / DOCX EXTRACTION</p><h2>Exam paper manager</h2><p>Upload a paper, review the extracted questions, then publish it to students.</p></div><span className={status.includes("Published") ? "publish-status live" : "publish-status"}>{status.includes("Published") ? "Published" : "Draft"}</span></div><form className="admin-editor" onSubmit={extractQuestions}><div className="admin-editor-fields"><label>Paper title<input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Term 03 Biology Paper" /></label><label>Subject<input required value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="e.g. Biology" /></label><label>Exam date<input required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><label>Duration<select value={duration} onChange={(event) => setDuration(event.target.value)}><option>60 min</option><option>90 min</option><option>120 min</option><option>180 min</option></select></label><label className="admin-upload-field">Exam paper file<input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /><small>Optional when entering questions manually. Every PDF page is scanned. Text-based files work best.</small></label></div>{error && <p className="admin-upload-error">{error}</p>}{status && !status.includes("Published") && <p className="admin-upload-status">{status}</p>}<ExamQuestionEditor questions={questions} onChange={setQuestions} onAdd={addManualQuestion} /><div className="admin-editor-footer"><span>{questions.length > 0 ? "Review the extracted questions and answers before publishing." : "Questions remain private until you publish this paper."}</span><div><button type="submit" className="secondary-button" disabled={uploading}>{uploading ? "Reading file..." : "Extract questions"}</button><button type="button" className="primary-button" disabled={questions.length === 0} onClick={publishExam}>Publish to students →</button></div></div></form></section>;
+  return <section className="admin-form-page"><div className="admin-page-heading"><div><p className="eyebrow">ADMIN ONLY · PDF / DOCX EXTRACTION</p><h2>Exam paper manager</h2><p>Upload a paper, review the extracted questions, then publish it to students.</p></div><span className={status.includes("Published") ? "publish-status live" : "publish-status"}>{status.includes("Published") ? "Published" : "Draft"}</span></div><form className="admin-editor" onSubmit={extractQuestions}><div className="admin-editor-fields"><label>Paper title<input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Term 03 Biology Paper" /></label><label>Subject<input required value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="e.g. Biology" /></label><label>Grade<select required value={grade} onChange={(event) => setGrade(event.target.value)}><option value="">Select grade</option>{[6, 7, 8, 9, 10, 11].map((value) => <option key={value} value={value}>Grade {value}</option>)}</select></label><label>Start date and time<input required type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label><label>End date and time<input required type="datetime-local" min={startsAt || undefined} value={endsAt} onChange={(event) => setEndsAt(event.target.value)} /></label><label>Duration<select value={duration} onChange={(event) => setDuration(event.target.value)}><option>60 min</option><option>90 min</option><option>120 min</option><option>180 min</option></select></label><label className="admin-upload-field">Exam paper file<input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /><small>Optional when entering questions manually. Every PDF page is scanned. Text-based files work best.</small></label></div>{error && <p className="admin-upload-error">{error}</p>}{status && !status.includes("Published") && <p className="admin-upload-status">{status}</p>}<ExamQuestionEditor questions={questions} onChange={setQuestions} onAdd={addManualQuestion} /><div className="admin-editor-footer"><span>{questions.length > 0 ? "Review the extracted questions and answers before publishing." : "Questions remain private until you publish this paper."}</span><div><button type="submit" className="secondary-button" disabled={uploading}>{uploading ? "Reading file..." : "Extract questions"}</button><button type="button" className="primary-button" disabled={questions.length === 0} onClick={publishExam}>Publish to students →</button></div></div></form></section>;
 }
 
 function AdminForm({ title, description, fields, published, onPublish }: { title: string; description: string; fields: string[]; published: boolean; onPublish: () => void }) {
@@ -236,6 +244,7 @@ export default function Home() {
   });
   const [activeExamId, setActiveExamId] = useState<string | null>(null);
   const [attemptDeadline, setAttemptDeadline] = useState<number | null>(null);
+  const [scheduleNow, setScheduleNow] = useState(() => Date.now());
   const [profileOpen, setProfileOpen] = useState(false);
   const [question, setQuestion] = useState(0);
   const [seconds, setSeconds] = useState(0);
@@ -262,11 +271,17 @@ export default function Home() {
   const [assistantMessages, setAssistantMessages] = useState<{ from: "assistant" | "user"; text: string }[]>([]);
   const [assistantInput, setAssistantInput] = useState("");
   const text = translations[language as keyof typeof translations];
-  const activeExam = publishedExam ?? contentExams.find((exam) => exam.id === activeExamId) ?? contentExams[0] ?? null;
+  const availableExams = useMemo(
+    () => (publishedExam ? [publishedExam, ...contentExams] : contentExams)
+      .filter((exam) => Date.parse(exam.endsAt) > scheduleNow),
+    [contentExams, publishedExam, scheduleNow],
+  );
+  const activeExam = publishedExam ?? (activeExamId
+    ? availableExams.find((exam) => exam.id === activeExamId) ?? null
+    : availableExams[0] ?? null);
   const questions = activeExam?.questions ?? [];
-  const allExams = publishedExam ? [publishedExam, ...contentExams] : contentExams;
   const academicProfile = { educationLevel: profile.educationLevel === "Not provided" ? null : profile.educationLevel, grade: profile.grade, stream: profile.stream === "Not provided" ? null : profile.stream };
-  const exams = userRole === "student" ? allExams.filter((exam) => matchesAcademicAudience(academicProfile, exam)) : allExams;
+  const exams = userRole === "student" ? availableExams.filter((exam) => matchesAcademicAudience(academicProfile, exam)) : availableExams;
   const writtenPapers = userRole === "student" ? allWrittenPapers.filter((paper) => matchesAcademicAudience(academicProfile, paper)) : allWrittenPapers;
   const academicProfileComplete = isAcademicProfileComplete(academicProfile);
   const quizExams = exams.filter((exam) => exam.isQuiz);
@@ -323,8 +338,13 @@ export default function Home() {
     autoSubmitStarted.current = false;
     try {
       const response = await fetch(`/api/exams/${exam.id}/attempt`, { method: "POST" });
-      const payload = await response.json() as { expiresAt?: string; remainingSeconds?: number; error?: string };
-      if (!response.ok || !payload.expiresAt) throw new Error(payload.error ?? "This exam could not be started.");
+      const payload = await response.json() as { expiresAt?: string; remainingSeconds?: number; startsAt?: string; error?: string };
+      if (!response.ok || !payload.expiresAt) {
+        const startTime = payload.startsAt ? new Date(payload.startsAt) : null;
+        throw new Error(startTime && Number.isFinite(startTime.getTime())
+          ? `This exam starts at ${startTime.toLocaleString()}.`
+          : payload.error ?? "This exam could not be started.");
+      }
       const deadline = Date.parse(payload.expiresAt);
       if (!Number.isFinite(deadline)) throw new Error("The exam returned an invalid time limit.");
       setContentExams((current) => current.map((contentExam) => contentExam.id === exam.id ? { ...contentExam, studentAttemptStatus: "IN_PROGRESS" } : contentExam));
@@ -575,6 +595,20 @@ export default function Home() {
     });
     return () => { current = false; };
   }, [activeNav]);
+
+  useEffect(() => {
+    const now = Date.now();
+    const nextTransition = contentExams
+      .flatMap((exam) => [Date.parse(exam.startsAt), Date.parse(exam.endsAt)])
+      .filter((timestamp) => Number.isFinite(timestamp) && timestamp > now)
+      .sort((left, right) => left - right)[0];
+    if (nextTransition === undefined) return;
+    const timeout = window.setTimeout(
+      () => setScheduleNow(Date.now()),
+      Math.min(nextTransition - now, 2_147_000_000),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [contentExams, scheduleNow]);
 
   useEffect(() => {
     if (attemptDeadline === null || autoSubmitStarted.current) return;
@@ -1227,8 +1261,8 @@ if (!authenticated) {
               ? <p className="admin-empty">No quiz exams have been published yet.</p>
               : <div className="exam-list nav-exam-list">{quizExams.map((exam) => <article className={`exam-row ${exam.tone}`} key={exam.id}>
                 <div className="date-block"><strong>{exam.questions.length}</strong><span>QNS</span></div>
-                <div className="exam-info"><span className="subject-tag">{exam.subject}</span><h3>{exam.title}</h3><p>{exam.duration} <span>·</span> Quiz exam</p></div>
-                <button className="primary-button" onClick={() => openExam(exam)}>{exam.studentAttemptStatus === "IN_PROGRESS" ? "Resume quiz" : exam.studentAttemptStatus === "SUBMITTED" || exam.studentAttemptStatus === "EXPIRED" ? "Retake quiz" : "Start quiz"} <span>→</span></button>
+                <div className="exam-info"><span className="subject-tag">{exam.subject}</span><h3>{exam.title}</h3><p>{scheduleNow < Date.parse(exam.startsAt) ? `Quiz starts at ${new Date(exam.startsAt).toLocaleString()}` : `${exam.duration} · Quiz exam`}</p></div>
+                <button className="primary-button" disabled={scheduleNow < Date.parse(exam.startsAt)} onClick={() => openExam(exam)}>{scheduleNow < Date.parse(exam.startsAt) ? "Not started" : exam.studentAttemptStatus === "IN_PROGRESS" ? "Resume quiz" : exam.studentAttemptStatus === "SUBMITTED" || exam.studentAttemptStatus === "EXPIRED" ? "Retake quiz" : "Start quiz"} <span>→</span></button>
               </article>)}</div>}
           </section>}
 
@@ -1238,8 +1272,8 @@ if (!authenticated) {
               ? <p className="admin-empty">No scheduled examinations have been published yet.</p>
               : <div className="exam-list nav-exam-list">{scheduledExams.map((exam) => <article className={`exam-row ${exam.tone}`} key={exam.id}>
                 <div className="date-block"><strong>{exam.date.split(" ")[0]}</strong><span>{exam.date.split(" ")[1]}</span></div>
-                <div className="exam-info"><span className="subject-tag">{exam.subject}</span><h3>{exam.title}</h3><p>{exam.time} <span>·</span> {exam.duration}</p></div>
-                <button className="primary-button" disabled={!exam.canRetake && (exam.studentAttemptStatus === "SUBMITTED" || exam.studentAttemptStatus === "EXPIRED")} onClick={() => openExam(exam)}>{exam.studentAttemptStatus === "IN_PROGRESS" ? "Resume exam" : exam.canRetake && (exam.studentAttemptStatus === "SUBMITTED" || exam.studentAttemptStatus === "EXPIRED") ? "Retake exam" : exam.studentAttemptStatus === "SUBMITTED" ? "Attempt complete" : exam.studentAttemptStatus === "EXPIRED" ? "Attempt expired" : "Open exam"} <span>→</span></button>
+                <div className="exam-info"><span className="subject-tag">{exam.subject}</span><h3>{exam.title}</h3><p>{scheduleNow < Date.parse(exam.startsAt) ? `Exam starts at ${new Date(exam.startsAt).toLocaleString()}` : `${exam.time} · ${exam.duration}`}</p></div>
+                <button className="primary-button" disabled={scheduleNow < Date.parse(exam.startsAt) || (!exam.canRetake && (exam.studentAttemptStatus === "SUBMITTED" || exam.studentAttemptStatus === "EXPIRED"))} onClick={() => openExam(exam)}>{scheduleNow < Date.parse(exam.startsAt) ? "Not started" : exam.studentAttemptStatus === "IN_PROGRESS" ? "Resume exam" : exam.canRetake && (exam.studentAttemptStatus === "SUBMITTED" || exam.studentAttemptStatus === "EXPIRED") ? "Retake exam" : exam.studentAttemptStatus === "SUBMITTED" ? "Attempt complete" : exam.studentAttemptStatus === "EXPIRED" ? "Attempt expired" : "Open exam"} <span>→</span></button>
               </article>)}</div>}
           </section>}
 

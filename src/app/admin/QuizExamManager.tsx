@@ -15,6 +15,8 @@ interface QuizFormData {
   grade: string;
   stream: string;
   description: string;
+  startsAt: string;
+  endsAt: string;
   difficultyDistribution: Record<DifficultyMode, number>;
 }
 
@@ -65,6 +67,8 @@ export default function QuizExamManager() {
     grade: "",
     stream: "",
     description: "",
+    startsAt: "",
+    endsAt: "",
     difficultyDistribution: { easy: 0, medium: 0, hard: 0, normal: 0 },
   });
   const [quizQuestions, setQuizQuestions] = useState<Record<DifficultyMode, QuizQuestion[]>>({
@@ -116,6 +120,8 @@ export default function QuizExamManager() {
       grade: "",
       stream: "",
       description: "",
+      startsAt: "",
+      endsAt: "",
       difficultyDistribution: { easy: 0, medium: 0, hard: 0, normal: 0 },
     });
     setQuizQuestions({ easy: [], medium: [], hard: [], normal: [] });
@@ -134,8 +140,15 @@ export default function QuizExamManager() {
     setLoading(true);
     setError("");
 
-    if (!quizForm.title || !quizForm.subject) {
-      setError("Title and subject are required.");
+    if (!quizForm.title || !quizForm.subject || !quizForm.startsAt || !quizForm.endsAt) {
+      setError("Title, subject, start date and time, and end date and time are required.");
+      setLoading(false);
+      return;
+    }
+    const startsAt = new Date(quizForm.startsAt);
+    const endsAt = new Date(quizForm.endsAt);
+    if (!Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime()) || endsAt <= startsAt) {
+      setError("Choose a valid end date and time after the start date and time.");
       setLoading(false);
       return;
     }
@@ -167,6 +180,8 @@ export default function QuizExamManager() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...quizForm,
+          startsAt: startsAt.toISOString(),
+          endsAt: endsAt.toISOString(),
           questions: allQuestions,
           totalQuestions: allQuestions.length,
         }),
@@ -184,6 +199,8 @@ export default function QuizExamManager() {
         grade: "",
         stream: "",
         description: "",
+        startsAt: "",
+        endsAt: "",
         difficultyDistribution: { easy: 0, medium: 0, hard: 0, normal: 0 },
       });
       setQuizQuestions({ easy: [], medium: [], hard: [], normal: [] });
@@ -348,6 +365,14 @@ export default function QuizExamManager() {
             <label>
               Subject
               <input required value={quizForm.subject} onChange={(e) => setQuizForm({ ...quizForm, subject: e.target.value })} placeholder="e.g. Physics" />
+            </label>
+            <label>
+              Start date and time
+              <input required type="datetime-local" value={quizForm.startsAt} onChange={(e) => setQuizForm({ ...quizForm, startsAt: e.target.value })} />
+            </label>
+            <label>
+              End date and time
+              <input required type="datetime-local" min={quizForm.startsAt || undefined} value={quizForm.endsAt} onChange={(e) => setQuizForm({ ...quizForm, endsAt: e.target.value })} />
             </label>
             <label>
               Education Level

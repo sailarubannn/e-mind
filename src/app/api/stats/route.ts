@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const activeSince = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const now = new Date();
 
   try {
     const [activeStudents, practiceExams] = await prisma.$transaction([
@@ -19,7 +20,7 @@ export async function GET() {
           ],
         },
       }),
-      prisma.exam.count({ where: { published: true } }),
+      prisma.exam.count({ where: { published: true, endsAt: { gt: now } } }),
     ]);
 
     return NextResponse.json(

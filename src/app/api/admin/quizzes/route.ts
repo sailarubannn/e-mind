@@ -55,6 +55,8 @@ export async function POST(request: Request) {
     const stream = body.stream ? String(body.stream).trim() : null;
     const description = body.description ? String(body.description) : null;
     const durationMins = Number(body.durationMins ?? 30);
+    const startsAt = new Date(String(body.startsAt ?? ""));
+    const endsAt = new Date(String(body.endsAt ?? ""));
     const questions = quizQuestions(body.questions);
 
     if (!title || !subjectName) {
@@ -62,6 +64,9 @@ export async function POST(request: Request) {
     }
     if (!educationLevel || grade === null || !isValidAcademicAudience(educationLevel, grade, stream)) {
       return NextResponse.json({ error: "Choose a valid grade for this education level; A/L quizzes also need a stream." }, { status: 400 });
+    }
+    if (!Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime()) || endsAt <= startsAt) {
+      return NextResponse.json({ error: "Choose a valid quiz window with an end date and time after the start." }, { status: 400 });
     }
 
     if (questions.length === 0) {
@@ -79,9 +84,6 @@ export async function POST(request: Request) {
 
     const subject = await prisma.subject.upsert({ where: { name: subjectName }, update: {}, create: { name: subjectName } });
 
-    const now = new Date();
-    const farFuture = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
-
     const quiz = await prisma.exam.create({
       data: {
         title,
@@ -91,8 +93,8 @@ export async function POST(request: Request) {
         stream,
         durationMins,
         totalMarks: questions.length,
-        startsAt: now,
-        endsAt: farFuture,
+        startsAt,
+        endsAt,
         isQuiz: true,
         published: true,
         subjectId: subject.id,

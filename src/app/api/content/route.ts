@@ -10,11 +10,12 @@ export const runtime = "nodejs";
 
 export async function GET() {
   const user = await getMongoUser();
+  const requestTime = new Date();
   const [books, videos, exams, writtenPapers] = await Promise.all([
     prisma.book.findMany({ where: { published: true }, orderBy: { createdAt: "desc" } }),
     prisma.video.findMany({ where: { published: true }, orderBy: { createdAt: "desc" } }),
     prisma.exam.findMany({
-      where: { published: true },
+      where: { published: true, endsAt: { gt: requestTime } },
       orderBy: { startsAt: "asc" },
       select: {
         id: true,

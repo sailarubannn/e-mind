@@ -35,6 +35,13 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   }
 
   const now = new Date();
+  if (now < exam.startsAt) {
+    return NextResponse.json({ error: "This exam has not started yet.", startsAt: exam.startsAt.toISOString() }, { status: 409 });
+  }
+  if (now >= exam.endsAt) {
+    return NextResponse.json({ error: "This exam has ended." }, { status: 410 });
+  }
+  const expiresAt = new Date(Math.min(now.getTime() + exam.durationMins * 60_000, exam.endsAt.getTime()));
   try {
     await prisma.examAttempt.upsert({
       where: { examId_userId: { examId, userId: user.id } },
@@ -43,7 +50,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
         examId,
         userId: user.id,
         startedAt: now,
-        expiresAt: new Date(now.getTime() + exam.durationMins * 60_000),
+        expiresAt,
       },
     });
 
@@ -55,6 +62,13 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
       if (!attempt) return { type: "missing" as const };
 
       if (attempt.status === "IN_PROGRESS" && attempt.expiresAt > now) {
+        if (attempt.expiresAt > exam.endsAt) {
+          attempt = await transaction.examAttempt.update({
+            where: { id: attempt.id },
+            data: { expiresAt: exam.endsAt },
+            include: { result: { select: { obtainedMarks: true, totalMarks: true, percentage: true, passed: true } } },
+          });
+        }
         return { type: "ready" as const, attempt };
       }
 
@@ -95,7 +109,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
           examId,
           userId: user.id,
           startedAt: now,
-          expiresAt: new Date(now.getTime() + exam.durationMins * 60_000),
+          expiresAt,
         },
       });
       return { type: "ready" as const, attempt: nextAttempt };

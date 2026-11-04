@@ -64,6 +64,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   });
   if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
   if (!matchesAcademicAudience(user, exam)) return NextResponse.json({ error: "This exam is not available for your grade or stream." }, { status: 403 });
+  const now = new Date();
+  if (now < exam.startsAt) {
+    return NextResponse.json({ error: `This exam starts at ${exam.startsAt.toLocaleString()}.` }, { status: 409 });
+  }
 
   const totalMarks = exam.questions.reduce((total, question) => total + question.marks, 0);
   const invalidAnswerKey = exam.questions.some((question) => {
@@ -75,7 +79,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   const answerByQuestion = new Map(submittedAnswers.map((item) => [String(item.questionId ?? ""), item.answer]));
-  const now = new Date();
   const existingAttempt = await prisma.examAttempt.findUnique({
     where: { examId_userId: { examId, userId: user.id } },
   });
@@ -84,6 +87,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
   if (existingAttempt.status !== "IN_PROGRESS") {
     return NextResponse.json({ error: "This exam attempt is no longer open." }, { status: 409 });
+  }
+  if (now >= exam.endsAt) {
+    await prisma.examAttempt.update({ where: { id: existingAttempt.id }, data: { status: "EXPIRED" } });
+    return NextResponse.json({ error: "The exam has ended." }, { status: 410 });
   }
   if (now.getTime() >= existingAttempt.expiresAt.getTime() + 5_000) {
     await prisma.examAttempt.update({ where: { id: existingAttempt.id }, data: { status: "EXPIRED" } });
